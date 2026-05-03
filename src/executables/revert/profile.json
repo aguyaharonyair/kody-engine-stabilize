@@ -60,6 +60,7 @@
         }
       },
       { "script": "revertFlow" },
+      { "script": "loadTaskState" },
       { "shell": "revert.sh" }
     ],
     "postflight": [
