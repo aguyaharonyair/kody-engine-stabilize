@@ -1,0 +1,64 @@
+{
+  "name": "revert",
+  "role": "primitive",
+  "describe": "Revert one or more commits on an existing PR branch via `git revert`. No agent — fully mechanical.",
+  "inputs": [
+    {
+      "name": "pr",
+      "flag": "--pr",
+      "type": "int",
+      "required": true,
+      "describe": "GitHub PR number whose branch to revert commits on."
+    },
+    {
+      "name": "shas",
+      "flag": "--shas",
+      "type": "string",
+      "required": true,
+      "bindsCommentRest": true,
+      "describe": "One or more commit SHAs (whitespace-separated) to revert. Each must exist in the PR branch's history."
+    }
+  ],
+  "claudeCode": {
+    "model": "inherit",
+    "permissionMode": "acceptEdits",
+    "maxTurns": 0,
+    "maxThinkingTokens": null,
+    "systemPromptAppend": null,
+    "tools": [],
+    "hooks": [],
+    "skills": [],
+    "commands": [],
+    "subagents": [],
+    "plugins": [],
+    "mcpServers": []
+  },
+  "cliTools": [],
+  "scripts": {
+    "preflight": [
+      {
+        "script": "setLifecycleLabel",
+        "with": {
+          "label": "kody:reverting",
+          "color": "cccccc",
+          "description": "kody: reverting commits"
+        }
+      },
+      { "script": "revertFlow" },
+      { "shell": "revert.sh" }
+    ],
+    "postflight": [
+      { "script": "markFlowSuccess" },
+      { "script": "commitAndPush" },
+      { "script": "ensurePr" },
+      { "script": "postIssueComment" },
+      { "script": "writeRunSummary" }
+    ]
+  },
+  "output": {
+    "actionTypes": [
+      "REVERT_COMPLETED",
+      "REVERT_FAILED"
+    ]
+  }
+}

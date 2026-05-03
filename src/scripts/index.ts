@@ -33,6 +33,7 @@ import { loadPriorArt } from "./loadPriorArt.js"
 import { loadQaGuide } from "./loadQaGuide.js"
 import { loadTaskState } from "./loadTaskState.js"
 import { loadVaultContext } from "./loadVaultContext.js"
+import { markFlowSuccess } from "./markFlowSuccess.js"
 import { memorizeFlow } from "./memorizeFlow.js"
 import { mergeReleasePr } from "./mergeReleasePr.js"
 import { mirrorStateToPr } from "./mirrorStateToPr.js"
@@ -52,6 +53,7 @@ import { requireFeedbackActions } from "./requireFeedbackActions.js"
 import { requirePlanDeviations } from "./requirePlanDeviations.js"
 import { resolveArtifacts } from "./resolveArtifacts.js"
 import { resolveFlow } from "./resolveFlow.js"
+import { revertFlow } from "./revertFlow.js"
 import { resolvePreviewUrl } from "./resolvePreviewUrl.js"
 import { reviewFlow } from "./reviewFlow.js"
 import { runFlow } from "./runFlow.js"
@@ -74,6 +76,7 @@ export const preflightScripts: Record<string, PreflightScript> = {
   fixFlow,
   fixCiFlow,
   resolveFlow,
+  revertFlow,
   reviewFlow,
   syncFlow,
   initFlow,
@@ -136,6 +139,7 @@ export const postflightScripts: Record<string, PostflightScript> = {
   recordOutcome,
   mergeReleasePr,
   waitForCi,
+  markFlowSuccess,
 }
 
 export const allScriptNames: Set<string> = new Set([
