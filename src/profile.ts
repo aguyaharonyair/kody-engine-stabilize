@@ -303,6 +303,12 @@ function parseScriptList(p: string, key: string, raw: unknown): ScriptEntry[] {
     if (r.with && typeof r.with === "object") {
       entry.with = r.with as ScriptEntry["with"]
     }
+    if (typeof r.timeoutSec === "number" && r.timeoutSec > 0) {
+      if (!hasShell) {
+        throw new ProfileError(p, `scripts.${key}[${i}] "timeoutSec" only applies to shell entries`)
+      }
+      entry.timeoutSec = r.timeoutSec
+    }
     out.push(entry)
   }
   return out

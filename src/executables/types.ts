@@ -185,6 +185,14 @@ export interface ScriptEntry {
    * dispatcher script can be reused with different `next` targets.
    */
   with?: Record<string, string | number | boolean>
+  /**
+   * Optional shell-script timeout in seconds. Only honored on `shell` entries.
+   * Falls back to `KODY_SHELL_TIMEOUT_SEC` env var, then the 300s default.
+   * Long-running shells (release publish, large repo verify) should declare
+   * a higher value rather than relying on the default and getting SIGKILLed
+   * with an opaque "exited -1".
+   */
+  timeoutSec?: number
 }
 
 export interface OutputContract {

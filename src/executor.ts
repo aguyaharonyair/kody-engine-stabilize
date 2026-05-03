@@ -337,7 +337,25 @@ function finish(out: ExecutorOutput): ExecutorOutput {
 // Shell-script entries. See ScriptEntry.shell in executables/types.ts.
 // ────────────────────────────────────────────────────────────────────────────
 
-const SHELL_TIMEOUT_MS = 300_000
+const DEFAULT_SHELL_TIMEOUT_MS = 300_000
+
+/**
+ * Resolve the timeout for a shell entry. Precedence:
+ *   1. entry.timeoutSec  (per-entry profile override)
+ *   2. KODY_SHELL_TIMEOUT_SEC env var (global override)
+ *   3. 300s default
+ * Returns ms.
+ */
+function resolveShellTimeoutMs(entry: ScriptEntry): number {
+  if (typeof entry.timeoutSec === "number" && entry.timeoutSec > 0) {
+    return Math.floor(entry.timeoutSec * 1000)
+  }
+  const envSec = Number(process.env.KODY_SHELL_TIMEOUT_SEC)
+  if (Number.isFinite(envSec) && envSec > 0) {
+    return Math.floor(envSec * 1000)
+  }
+  return DEFAULT_SHELL_TIMEOUT_MS
+}
 
 /**
  * Invoke a `.sh` entry. Args from `entry.with` are passed positionally;
@@ -349,7 +367,9 @@ const SHELL_TIMEOUT_MS = 300_000
  *   `KODY_PR_URL=<url>`    — write into ctx.output.prUrl.
  *   `KODY_REASON=<text>`   — write into ctx.output.reason.
  * Non-zero exit is treated as a preflight failure (executor bails per the
- * standard skipAgent + exit rule).
+ * standard skipAgent + exit rule). Timeout (SIGTERM via Node's `timeout`
+ * option) is surfaced as exit 124 with an explicit "shell '<name>' timed
+ * out after Ns" reason — distinct from a script's own non-zero exit.
  */
 function runShellEntry(entry: ScriptEntry, ctx: Context, profile: Profile): void {
   const shellName = entry.shell!
@@ -371,12 +391,13 @@ function runShellEntry(entry: ScriptEntry, ctx: Context, profile: Profile): void
     env[`KODY_CFG_${k}`] = v
   }
 
+  const timeoutMs = resolveShellTimeoutMs(entry)
   const r = spawnSync("bash", [shellPath, ...positional], {
     cwd: ctx.cwd,
     encoding: "utf-8",
     env,
     stdio: ["pipe", "pipe", "pipe"],
-    timeout: SHELL_TIMEOUT_MS,
+    timeout: timeoutMs,
   })
 
   const stdout = r.stdout ?? ""
@@ -396,6 +417,22 @@ function runShellEntry(entry: ScriptEntry, ctx: Context, profile: Profile): void
   if (prUrlMatch?.[1]) ctx.output.prUrl = prUrlMatch[1].trim()
   const reasonMatch = stdout.match(/^KODY_REASON=(.+)$/m)
   if (reasonMatch?.[1]) ctx.output.reason = reasonMatch[1].trim()
+
+  // spawnSync surfaces a timeout via r.signal (typically "SIGTERM") with
+  // r.status === null. Distinguish that from a real non-zero exit so the
+  // operator sees "timed out after Ns" instead of an opaque "exited -1".
+  const timedOut = r.status === null && r.signal !== null
+  if (timedOut) {
+    ctx.skipAgent = true
+    const seconds = Math.round(timeoutMs / 1000)
+    if (ctx.output.exitCode === undefined || ctx.output.exitCode === 0) {
+      ctx.output.exitCode = 124
+    }
+    if (!ctx.output.reason) {
+      ctx.output.reason = `shell '${shellName}' timed out after ${seconds}s (signal=${r.signal})`
+    }
+    return
+  }
 
   const exit = r.status ?? -1
   if (exit !== 0) {
