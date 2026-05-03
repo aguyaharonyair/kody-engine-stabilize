@@ -184,7 +184,14 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
       failureReason: "agent produced no final message",
     }
 
-  const failedMatch = text.match(/(?:^|\n)\s*FAILED\s*:\s*(.+?)\s*$/s)
+  // Allow markdown decorators around the marker word (the agent may emit
+  // `**DONE**`, `### DONE`, `> FAILED: …`, `- DONE`). The leading character
+  // class also matches plain whitespace, so unstyled output keeps working.
+  const MARKDOWN_PREFIX = "[\\s>*_#`~\\-]*"
+  const FAILED_RE = new RegExp(`(?:^|\\n)${MARKDOWN_PREFIX}FAILED${MARKDOWN_PREFIX}\\s*:\\s*(.+?)\\s*$`, "is")
+  const DONE_RE = new RegExp(`(?:^|\\n)${MARKDOWN_PREFIX}DONE\\b`, "i")
+
+  const failedMatch = text.match(FAILED_RE)
   if (failedMatch) {
     return {
       done: false,
@@ -193,17 +200,17 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
       feedbackActions: "",
       planDeviations: "",
       priorArt: "",
-      failureReason: failedMatch[1]!.trim(),
+      failureReason: stripMarkdownEmphasis(failedMatch[1]!),
     }
   }
 
-  // Primary signal: bare-word DONE line.
+  // Primary signal: bare-word DONE line (with optional markdown decorators).
   // Fallback signal: a parseable COMMIT_MSG: marker — the structured
   // artifact the downstream ensurePr step actually consumes. Weaker
   // models sometimes drop the sentinel but still produce the contract
   // fields; if they did, treat the session as complete.
-  const hasDoneMarker = /(^|\n)\s*DONE\b/i.test(text)
-  const hasCommitMsg = /^[ \t]*COMMIT_MSG\s*:/im.test(text)
+  const hasDoneMarker = DONE_RE.test(text)
+  const hasCommitMsg = /^[\s>*_#`~\-]*COMMIT_MSG\s*:/im.test(text)
   if (!hasDoneMarker && !hasCommitMsg) {
     return {
       done: false,
@@ -216,8 +223,8 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
     }
   }
 
-  const commitMatch = text.match(/^[ \t]*COMMIT_MSG\s*:\s*(.+)$/im)
-  const commitMessage = commitMatch ? commitMatch[1]!.trim() : ""
+  const commitMatch = text.match(/^[\s>*_#`~\-]*COMMIT_MSG[\s>*_#`~\-]*\s*:\s*(.+)$/im)
+  const commitMessage = commitMatch ? stripMarkdownEmphasis(commitMatch[1]!) : ""
 
   // FEEDBACK_ACTIONS: spans from the marker to the next top-level marker.
   const feedbackActions = extractBlock(
@@ -257,6 +264,15 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
   }
 
   return { done: true, commitMessage, prSummary, feedbackActions, planDeviations, priorArt, failureReason: "" }
+}
+
+/**
+ * Strip leading/trailing markdown emphasis (`**`, `__`, `*`, `_`, `` ` ``)
+ * from a value captured immediately after a marker. Doesn't touch
+ * non-emphasis content — `feat: add **bold** thing` stays intact.
+ */
+function stripMarkdownEmphasis(s: string): string {
+  return s.trim().replace(/^[*_`~]+|[*_`~]+$/g, "").trim()
 }
 
 function extractBlock(text: string, startMarker: RegExp, endMarker: RegExp): string {

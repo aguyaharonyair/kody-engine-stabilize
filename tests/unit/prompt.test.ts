@@ -299,4 +299,32 @@ describe("prompt: parseAgentResult", () => {
     const result = parseAgentResult(text)
     expect(result.priorArt).toBe("[]")
   })
+
+  it("accepts **DONE** with markdown emphasis", () => {
+    const result = parseAgentResult("**DONE**\nCOMMIT_MSG: feat: bold X\nPR_SUMMARY:\n- bolded")
+    expect(result.done).toBe(true)
+    expect(result.commitMessage).toBe("feat: bold X")
+  })
+
+  it("accepts ### DONE heading", () => {
+    const result = parseAgentResult("### DONE\nCOMMIT_MSG: feat: heading X\nPR_SUMMARY:\n- via heading")
+    expect(result.done).toBe(true)
+    expect(result.commitMessage).toBe("feat: heading X")
+  })
+
+  it("accepts > DONE blockquote and **FAILED:** with reason", () => {
+    const done = parseAgentResult("> DONE\nCOMMIT_MSG: chore: quoted\nPR_SUMMARY:\n- quoted")
+    expect(done.done).toBe(true)
+    expect(done.commitMessage).toBe("chore: quoted")
+
+    const failed = parseAgentResult("**FAILED:** something broke")
+    expect(failed.done).toBe(false)
+    expect(failed.failureReason).toBe("something broke")
+  })
+
+  it("accepts COMMIT_MSG with markdown emphasis on the line", () => {
+    const result = parseAgentResult("DONE\n**COMMIT_MSG:** fix: bolded marker\nPR_SUMMARY:\n- ok")
+    expect(result.done).toBe(true)
+    expect(result.commitMessage).toBe("fix: bolded marker")
+  })
 })
