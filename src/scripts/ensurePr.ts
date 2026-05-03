@@ -60,8 +60,8 @@ export const ensurePr: PostflightScript = async (ctx) => {
 }
 
 function computeFailureReason(ctx: { data: Record<string, unknown> }): string {
-  const misses = (ctx.data.coverageMisses as { expectedTest: string }[] | undefined) ?? []
-  if (misses.length > 0) return `missing tests: ${misses.map((m) => m.expectedTest).join(", ")}`
+  const expectedTests = collectExpectedTests(ctx.data.coverageMisses)
+  if (expectedTests.length > 0) return `missing tests: ${expectedTests.join(", ")}`
 
   const agentDone = Boolean(ctx.data.agentDone)
   if (!agentDone) {
@@ -76,4 +76,38 @@ function computeFailureReason(ctx: { data: Record<string, unknown> }): string {
   if (ctx.data.verifyOk === false) return (ctx.data.verifyReason as string) || "verify failed"
 
   return ""
+}
+
+/**
+ * Defensive coverage-miss extractor.
+ *
+ * Historically this code read `m.expectedTest` directly. If the upstream
+ * shape ever drifts (e.g. `expected` instead of `expectedTest`), the strict
+ * read would silently produce "undefined, undefined, undefined" without
+ * any warning, and ensurePr would open a non-draft PR despite real test
+ * gaps. We now defensively look for `expectedTest`, `expected`, or `file`
+ * (in priority order), and log a warning when items can't be parsed.
+ *
+ * Exported for unit tests; the production caller is `computeFailureReason`.
+ */
+export function collectExpectedTests(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) return []
+  const out: string[] = []
+  let unparseable = 0
+  for (const item of raw) {
+    if (!item || typeof item !== "object") {
+      unparseable++
+      continue
+    }
+    const r = item as Record<string, unknown>
+    const candidate = r.expectedTest ?? r.expected ?? r.file
+    if (typeof candidate === "string" && candidate.length > 0) out.push(candidate)
+    else unparseable++
+  }
+  if (unparseable > 0) {
+    process.stderr.write(
+      `[kody] ensurePr: ${unparseable} coverageMisses entry/entries had no recognizable test path — shape may have drifted\n`,
+    )
+  }
+  return out
 }

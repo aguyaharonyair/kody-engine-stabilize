@@ -100,9 +100,21 @@ export function autoDispatch(opts?: {
 
   let executable: string | null = null
   let consumedFirstToken = false
-  if (aliased && getProfileInputs(aliased) !== null) {
-    executable = aliased
-    consumedFirstToken = true
+  if (aliased) {
+    if (getProfileInputs(aliased) !== null) {
+      executable = aliased
+      consumedFirstToken = true
+    } else if (firstToken && aliases[firstToken] && aliases[firstToken] === aliased) {
+      // The user (or BUILTIN_ALIASES) configured an alias whose target
+      // doesn't exist — likely a deleted/renamed executable. Surface this
+      // loudly so operators can spot the misconfig in GHA logs.
+      // We deliberately only warn for *aliased* targets, not arbitrary
+      // typed tokens, so natural language like "@kody please fix X" stays
+      // silent (the politeness words get stripped downstream into feedback).
+      process.stderr.write(
+        `[kody] dispatch: alias '${firstToken}' → '${aliased}' has no matching executable; falling back to default\n`,
+      )
+    }
   }
   if (!executable) {
     executable = isPr ? (opts?.config?.defaultPrExecutable ?? "fix") : (opts?.config?.defaultExecutable ?? null)

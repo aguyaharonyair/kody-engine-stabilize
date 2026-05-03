@@ -1,7 +1,7 @@
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { autoDispatch } from "../../src/dispatch.js"
 
 function writeEvent(body: unknown): string {
@@ -518,5 +518,61 @@ describe("dispatch: defensive cases", () => {
     delete process.env.GITHUB_EVENT_NAME
     delete process.env.GITHUB_EVENT_PATH
     expect(autoDispatch()).toBeNull()
+  })
+})
+
+describe("dispatch: alias misconfig surfacing", () => {
+  const prev: Record<string, string | undefined> = {}
+  let stderrSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    prev.EVENT_NAME = process.env.GITHUB_EVENT_NAME
+    prev.EVENT_PATH = process.env.GITHUB_EVENT_PATH
+    stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
+  })
+  afterEach(() => {
+    process.env.GITHUB_EVENT_NAME = prev.EVENT_NAME
+    process.env.GITHUB_EVENT_PATH = prev.EVENT_PATH
+    stderrSpy.mockRestore()
+  })
+
+  it("warns when a configured alias maps to a non-registered executable", () => {
+    process.env.GITHUB_EVENT_NAME = "issue_comment"
+    process.env.GITHUB_EVENT_PATH = writeEvent({
+      issue: { number: 9, pull_request: null },
+      comment: { body: "@kody phantom-cmd", user: { login: "alice", type: "User" } },
+    })
+    const result = autoDispatch({
+      config: {
+        aliases: { "phantom-cmd": "no-such-executable" },
+        defaultExecutable: "classify",
+      } as never,
+    })
+    expect(result?.executable).toBe("classify")
+    const warnings = stderrSpy.mock.calls.map((c: unknown[]) => String(c[0])).join("\n")
+    expect(warnings).toMatch(/alias 'phantom-cmd' → 'no-such-executable'/)
+    expect(warnings).toMatch(/has no matching executable/)
+  })
+
+  it("does NOT warn for natural-language openings (no alias configured)", () => {
+    process.env.GITHUB_EVENT_NAME = "issue_comment"
+    process.env.GITHUB_EVENT_PATH = writeEvent({
+      issue: { number: 9, pull_request: null },
+      comment: { body: "@kody totally-unknown-thing", user: { login: "alice", type: "User" } },
+    })
+    autoDispatch({
+      config: { defaultExecutable: "classify", aliases: {} } as never,
+    })
+    expect(stderrSpy.mock.calls.length).toBe(0)
+  })
+
+  it("does NOT warn for politeness words like 'please'", () => {
+    process.env.GITHUB_EVENT_NAME = "issue_comment"
+    process.env.GITHUB_EVENT_PATH = writeEvent({
+      issue: { number: 22, pull_request: {} },
+      comment: { body: "@kody please change foo", user: { login: "alice", type: "User" } },
+    })
+    autoDispatch()
+    expect(stderrSpy.mock.calls.length).toBe(0)
   })
 })
