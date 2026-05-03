@@ -51,6 +51,19 @@ export const commitAndPush: PostflightScript = async (ctx) => {
     // Fall back to working-tree status only if the commit was skipped.
     const postCommitFiles = result.committed ? listFilesInCommit("HEAD", ctx.cwd) : listChangedFiles(ctx.cwd)
     ctx.data.changedFiles = postCommitFiles.filter((f) => !isForbiddenPath(f))
+
+    if (result.committed && !result.pushed) {
+      // Commit landed locally but push failed (network, auth, branch
+      // protection). Surface as a non-zero exit so the operator sees this
+      // explicitly and downstream ensurePr / postIssueComment can branch.
+      const reason = result.pushError ?? "push failed (no error detail)"
+      ctx.data.commitCrash = reason
+      if (ctx.output.exitCode === undefined || ctx.output.exitCode === 0) {
+        ctx.output.exitCode = 4
+      }
+      if (!ctx.output.reason) ctx.output.reason = reason
+      process.stderr.write(`[kody commitAndPush] ${reason}\n`)
+    }
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err)
     ctx.data.commitCrash = reason

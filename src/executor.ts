@@ -177,6 +177,16 @@ export async function runExecutable(profileName: string, input: ExecutorInput): 
     }
 
     // ── Postflight ────────────────────────────────────────────────────────────
+    // NOTE: postflights run unconditionally even after a preflight failure
+    // (shell entries set ctx.skipAgent + non-zero exitCode but DO fall
+    // through; only TS preflights with skipAgent + non-zero exit hard-bail
+    // above). This is deliberate: postIssueComment, writeRunSummary,
+    // recordOutcome, mirrorStateToPr, etc. need to fire on failure to
+    // surface the failure to the user / state machine. Postflights that
+    // MUST NOT run on failure (commitAndPush, ensurePr) self-guard via
+    // ctx.skipAgent + ctx.output.exitCode + ctx.data.agentDone checks.
+    // When adding a new postflight, default to "safe to run on failure"
+    // unless its side effects would corrupt state.
     for (const entry of profile.scripts.postflight) {
       if (!shouldRun(entry, ctx)) continue
       const label = entry.script ?? entry.shell ?? "<unknown>"

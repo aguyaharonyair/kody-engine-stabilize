@@ -18,10 +18,17 @@ export const ensurePr: PostflightScript = async (ctx) => {
     return
   }
 
-  const commitResult = ctx.data.commitResult as { committed: boolean } | undefined
+  const commitResult = ctx.data.commitResult as { committed: boolean; pushed?: boolean } | undefined
   const hasCommits = Boolean(ctx.data.hasCommitsAhead)
   if (!commitResult?.committed && !hasCommits) {
     // Nothing to ship. Let postIssueComment surface the "no changes" state.
+    return
+  }
+
+  // Local commit succeeded but push failed (commitAndPush surfaced this via
+  // exitCode=4). Don't try to open a PR — gh would 422 against a branch that
+  // origin has never seen. postIssueComment will surface the failure.
+  if (commitResult?.committed && commitResult.pushed === false) {
     return
   }
 

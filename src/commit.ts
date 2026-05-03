@@ -38,6 +38,14 @@ export interface CommitResult {
   pushed: boolean
   sha: string
   message: string
+  /**
+   * Set when commit succeeded but push failed (network blip, auth, branch
+   * protection). Lets downstream postflights distinguish "no commits made"
+   * (`committed: false`) from "commits made but not on remote yet"
+   * (`committed: true, pushed: false, pushError: <stderr tail>`).
+   * ensurePr must bail in the latter case to avoid 422 from the GitHub API.
+   */
+  pushError?: string
 }
 
 function git(args: string[], cwd?: string): string {
@@ -207,11 +215,26 @@ export function commitAndPush(branch: string, agentMessage: string, cwd?: string
 
   try {
     git(["push", "-u", "origin", branch], cwd)
-  } catch {
-    git(["push", "--force-with-lease", "-u", "origin", branch], cwd)
+    return { committed: true, pushed: true, sha, message }
+  } catch (firstErr) {
+    try {
+      git(["push", "--force-with-lease", "-u", "origin", branch], cwd)
+      return { committed: true, pushed: true, sha, message }
+    } catch (secondErr) {
+      // Commit landed locally but neither push variant succeeded. Report
+      // the partial outcome so downstream postflights (ensurePr) can bail
+      // instead of opening a PR against a branch that is not on origin.
+      const tail = (secondErr instanceof Error ? secondErr.message : String(secondErr)).slice(-400)
+      const initial = firstErr instanceof Error ? firstErr.message : String(firstErr)
+      return {
+        committed: true,
+        pushed: false,
+        sha,
+        message,
+        pushError: `push failed: ${initial.slice(-200)} | force-with-lease failed: ${tail}`,
+      }
+    }
   }
-
-  return { committed: true, pushed: true, sha, message }
 }
 
 export function hasCommitsAhead(branch: string, defaultBranch: string, cwd?: string): boolean {
