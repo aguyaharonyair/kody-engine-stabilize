@@ -183,8 +183,14 @@ export function dispatchScheduledWatches(opts?: { now?: Date; windowSec?: number
     if (!opts?.force) {
       try {
         if (!cronMatchesInWindow(schedule, now, windowSec)) continue
-      } catch {
-        // Malformed cron in a profile — skip rather than crash the whole wake.
+      } catch (err) {
+        // Malformed cron in a profile — skip rather than crash the whole
+        // wake, but emit a stderr warning so operators see the misconfig
+        // in GHA logs instead of the watch silently never firing.
+        const msg = err instanceof Error ? err.message : String(err)
+        process.stderr.write(
+          `[kody] dispatchScheduledWatches: '${exe.name}' has invalid schedule '${schedule}' (${msg}); never firing\n`,
+        )
         continue
       }
     }

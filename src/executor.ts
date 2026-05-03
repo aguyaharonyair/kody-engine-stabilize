@@ -201,7 +201,12 @@ export async function runExecutable(profileName: string, input: ExecutorInput): 
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         process.stderr.write(`[kody] postflight "${label}" crashed: ${msg}\n`)
-        if (!ctx.output.reason) ctx.output.reason = `postflight ${label} crashed: ${msg}`
+        // Accumulate reasons across cascading postflight crashes — the first
+        // failure may not be the most informative one (e.g. ensurePr crash
+        // followed by postIssueComment crash). Operators want every reason
+        // visible, not just whichever one happened first.
+        const summary = `postflight ${label} crashed: ${msg}`
+        ctx.output.reason = ctx.output.reason ? `${ctx.output.reason}; ${summary}` : summary
         if (ctx.output.exitCode === 0) ctx.output.exitCode = 99
       }
     }

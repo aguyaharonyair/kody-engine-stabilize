@@ -142,7 +142,11 @@ function isAncestorOfHead(sha: string, cwd?: string): boolean {
 function tryPostPr(prNumber: number, body: string, cwd?: string): void {
   try {
     postPrReviewComment(prNumber, body, cwd)
-  } catch {
-    /* best effort */
+  } catch (err) {
+    // Non-fatal — but operators should see GitHub API failures explicitly,
+    // not have them swallowed. The flow continues either way (the comment
+    // is informational, not the source of truth).
+    const msg = err instanceof Error ? err.message : String(err)
+    process.stderr.write(`[kody revertFlow] PR comment on #${prNumber} failed: ${msg}\n`)
   }
 }
