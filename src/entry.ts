@@ -37,7 +37,7 @@ directory to add a new command.
 Exit codes:
   0   success (PR opened, verify passed — or resolve produced a merge commit)
   1   agent reported FAILED (draft PR opened)
-  2   verify failed (draft PR opened) — skipped in resolve mode
+  2   verify failed (no PR opened — branch pushed for inspection) — skipped in resolve mode
   3   no commits to ship (also the resolve clean-merge short-circuit)
   4   PR creation failed
   5   uncommitted changes on target branch

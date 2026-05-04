@@ -43,7 +43,7 @@ Environment:
 Exit codes (inherited from kody run):
   0   success (PR opened, verify passed)
   1   agent reported FAILED (draft PR opened)
-  2   verify failed (draft PR opened)
+  2   verify failed (no PR opened — branch pushed for inspection)
   3   no commits to ship
   4   PR creation failed
   5   uncommitted changes on target branch

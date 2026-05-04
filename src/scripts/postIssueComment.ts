@@ -50,7 +50,15 @@ export const postIssueComment: PostflightScript = async (ctx) => {
     : prAction === "updated"
       ? `ℹ️ kody made no changes — PR: ${prUrl}`
       : `✅ kody PR opened: ${prUrl}`
-  const failurePrSuffix = prUrl ? (prAction === "updated" ? ` — PR: ${prUrl}` : ` — draft PR: ${prUrl}`) : ""
+  const branch = ctx.data.branch as string | undefined
+  const failurePrSuffix = computeFailureSuffix({
+    prUrl,
+    prAction,
+    branch,
+    branchPushed: commitResult?.committed === true,
+    githubOwner: ctx.config.github?.owner,
+    githubRepo: ctx.config.github?.repo,
+  })
   const msg = isFailure ? `⚠️ kody FAILED: ${truncate(failureReason, 1500)}${failurePrSuffix}` : successMsg
   postWith(targetType, targetNumber, msg, ctx.cwd)
 
@@ -62,6 +70,29 @@ export const postIssueComment: PostflightScript = async (ctx) => {
   else if (!verifyOk) exitCode = 2
   ctx.output.exitCode = exitCode
   ctx.output.reason = failureReason || undefined
+}
+
+/**
+ * Build the trailing "— PR: …" / "— draft PR: …" / "— branch: …" suffix for
+ * the failure comment. When ensurePr was gated (verify failed → no PR) we
+ * still want the user to have a one-click path to inspect the agent's edits,
+ * so fall back to a branch URL whenever commitAndPush actually pushed.
+ *
+ * Exported for unit testing.
+ */
+export function computeFailureSuffix(input: {
+  prUrl: string | undefined
+  prAction: "created" | "updated" | undefined
+  branch: string | undefined
+  branchPushed: boolean
+  githubOwner: string | undefined
+  githubRepo: string | undefined
+}): string {
+  if (input.prUrl) {
+    return input.prAction === "updated" ? ` — PR: ${input.prUrl}` : ` — draft PR: ${input.prUrl}`
+  }
+  if (!input.branchPushed || !input.branch || !input.githubOwner || !input.githubRepo) return ""
+  return ` — branch: https://github.com/${input.githubOwner}/${input.githubRepo}/tree/${input.branch}`
 }
 
 function computeFailureReason(ctx: { data: Record<string, unknown> }): string {
