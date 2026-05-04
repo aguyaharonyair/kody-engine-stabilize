@@ -10,8 +10,8 @@ vi.mock("../../src/issue.js", () => ({
 }))
 
 import { gh as ghMock } from "../../src/issue.js"
-import { ContentsApiBackend } from "../../src/scripts/missionState/contentsApiBackend.js"
 import type { StateEnvelope } from "../../src/scripts/issueStateComment.js"
+import { ContentsApiBackend } from "../../src/scripts/missionState/contentsApiBackend.js"
 
 const gh = ghMock as unknown as ReturnType<typeof vi.fn>
 

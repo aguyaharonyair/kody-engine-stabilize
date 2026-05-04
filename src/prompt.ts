@@ -210,7 +210,7 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
   // models sometimes drop the sentinel but still produce the contract
   // fields; if they did, treat the session as complete.
   const hasDoneMarker = DONE_RE.test(text)
-  const hasCommitMsg = /^[\s>*_#`~\-]*COMMIT_MSG\s*:/im.test(text)
+  const hasCommitMsg = /^[\s>*_#`~-]*COMMIT_MSG\s*:/im.test(text)
   if (!hasDoneMarker && !hasCommitMsg) {
     return {
       done: false,
@@ -223,7 +223,7 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
     }
   }
 
-  const commitMatch = text.match(/^[\s>*_#`~\-]*COMMIT_MSG[\s>*_#`~\-]*\s*:\s*(.+)$/im)
+  const commitMatch = text.match(/^[\s>*_#`~-]*COMMIT_MSG[\s>*_#`~-]*\s*:\s*(.+)$/im)
   const commitMessage = commitMatch ? stripMarkdownEmphasis(commitMatch[1]!) : ""
 
   // FEEDBACK_ACTIONS: spans from the marker to the next top-level marker.
@@ -272,7 +272,10 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
  * non-emphasis content — `feat: add **bold** thing` stays intact.
  */
 function stripMarkdownEmphasis(s: string): string {
-  return s.trim().replace(/^[*_`~]+|[*_`~]+$/g, "").trim()
+  return s
+    .trim()
+    .replace(/^[*_`~]+|[*_`~]+$/g, "")
+    .trim()
 }
 
 function extractBlock(text: string, startMarker: RegExp, endMarker: RegExp): string {

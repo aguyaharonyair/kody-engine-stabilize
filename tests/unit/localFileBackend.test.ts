@@ -9,10 +9,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { StateEnvelope } from "../../src/scripts/issueStateComment.js"
-import {
-  type ActionsCacheAdapter,
-  LocalFileBackend,
-} from "../../src/scripts/missionState/localFileBackend.js"
+import { type ActionsCacheAdapter, LocalFileBackend } from "../../src/scripts/missionState/localFileBackend.js"
 
 function tmpDir(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "kody-mission-state-"))
@@ -51,9 +48,9 @@ describe("LocalFileBackend", () => {
 
   describe("constructor", () => {
     it("requires cwd, missionsDir, owner, repo", () => {
-      expect(
-        () => new LocalFileBackend({ cwd: "", missionsDir: ".kody/missions", owner: "o", repo: "r" }),
-      ).toThrow(/cwd/i)
+      expect(() => new LocalFileBackend({ cwd: "", missionsDir: ".kody/missions", owner: "o", repo: "r" })).toThrow(
+        /cwd/i,
+      )
       expect(() => new LocalFileBackend({ cwd, missionsDir: "", owner: "o", repo: "r" })).toThrow(/missionsDir/i)
       expect(() => new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "", repo: "r" })).toThrow(
         /owner.*repo/i,
@@ -137,10 +134,7 @@ describe("LocalFileBackend", () => {
     it("writes when cursor or data changes", () => {
       const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r" })
       const prev = envelope({ rev: 5, cursor: "a" })
-      b.save(
-        { path: ".kody/missions/auto-sync.state.json", handle: null, state: prev, created: true },
-        prev,
-      )
+      b.save({ path: ".kody/missions/auto-sync.state.json", handle: null, state: prev, created: true }, prev)
       const next = envelope({ rev: 6, cursor: "b" })
       const wrote = b.save(
         { path: ".kody/missions/auto-sync.state.json", handle: null, state: prev, created: false },

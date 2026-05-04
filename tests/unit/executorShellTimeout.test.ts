@@ -13,11 +13,7 @@ import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { runExecutable } from "../../src/executor.js"
 
-function makeFixture(opts: {
-  exeName: string
-  timeoutSec?: number
-  sleepSec: number
-}): string {
+function makeFixture(opts: { exeName: string; timeoutSec?: number; sleepSec: number }): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "kody-shell-timeout-"))
   const exeDir = path.join(root, ".kody", "executables", opts.exeName)
   fs.mkdirSync(exeDir, { recursive: true })

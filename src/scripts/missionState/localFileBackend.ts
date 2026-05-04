@@ -15,12 +15,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { initialStateEnvelope, isStateEnvelope, type StateEnvelope } from "../issueStateComment.js"
-import {
-  isStateUnchanged,
-  type LoadedMissionState,
-  type MissionStateBackend,
-  stateFilePath,
-} from "./backend.js"
+import { isStateUnchanged, type LoadedMissionState, type MissionStateBackend, stateFilePath } from "./backend.js"
 
 export interface LocalFileBackendOptions {
   /** Absolute path to the consumer repo working tree. */

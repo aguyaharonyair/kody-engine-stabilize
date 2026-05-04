@@ -94,11 +94,7 @@ export const revertFlow: PreflightScript = async (ctx) => {
   const runUrl = getRunUrl()
   const runSuffix = runUrl ? `, run ${runUrl}` : ""
   const shaList = resolved.map((r) => `\`${r.full.slice(0, 7)}\``).join(", ")
-  tryPostPr(
-    prNumber,
-    `⚙️ kody revert started on \`${ctx.data.branch}\`${runSuffix} — reverting ${shaList}`,
-    ctx.cwd,
-  )
+  tryPostPr(prNumber, `⚙️ kody revert started on \`${ctx.data.branch}\`${runSuffix} — reverting ${shaList}`, ctx.cwd)
 }
 
 function buildCommitMessage(resolved: { full: string; subject: string }[]): string {
@@ -111,9 +107,7 @@ function buildCommitMessage(resolved: { full: string; subject: string }[]): stri
 }
 
 function buildPrSummary(resolved: { full: string; subject: string }[]): string {
-  return resolved
-    .map((r) => `- Reverted \`${r.full.slice(0, 7)}\`${r.subject ? ` — ${r.subject}` : ""}`)
-    .join("\n")
+  return resolved.map((r) => `- Reverted \`${r.full.slice(0, 7)}\`${r.subject ? ` — ${r.subject}` : ""}`).join("\n")
 }
 
 function git(args: string[], cwd?: string): string {

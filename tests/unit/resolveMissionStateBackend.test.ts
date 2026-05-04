@@ -48,8 +48,6 @@ describe("resolveBackend", () => {
   it("throws when github.owner/repo is missing", () => {
     const cfg = configWith()
     cfg.github = { owner: "", repo: "" }
-    expect(() =>
-      resolveBackend({ config: cfg, cwd: "/tmp", missionsDir: ".kody/missions" }),
-    ).toThrow(/owner.*repo/i)
+    expect(() => resolveBackend({ config: cfg, cwd: "/tmp", missionsDir: ".kody/missions" })).toThrow(/owner.*repo/i)
   })
 })

@@ -30,19 +30,13 @@ describe("ensurePr: collectExpectedTests", () => {
   })
 
   it("extracts expectedTest field (canonical shape)", () => {
-    const out = collectExpectedTests([
-      { expectedTest: "src/foo.test.ts" },
-      { expectedTest: "src/bar.test.ts" },
-    ])
+    const out = collectExpectedTests([{ expectedTest: "src/foo.test.ts" }, { expectedTest: "src/bar.test.ts" }])
     expect(out).toEqual(["src/foo.test.ts", "src/bar.test.ts"])
     expect(stderrMock).not.toHaveBeenCalled()
   })
 
   it("falls back to expected/file when expectedTest is missing", () => {
-    const out = collectExpectedTests([
-      { expected: "src/a.test.ts" },
-      { file: "src/b.test.ts" },
-    ])
+    const out = collectExpectedTests([{ expected: "src/a.test.ts" }, { file: "src/b.test.ts" }])
     expect(out).toEqual(["src/a.test.ts", "src/b.test.ts"])
   })
 
