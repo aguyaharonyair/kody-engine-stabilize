@@ -3,7 +3,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import type { ChatEvent, EventSink } from "../../src/chat/events.js"
-import { buildPrompt, CHAT_SYSTEM_PROMPT, runChatTurn } from "../../src/chat/loop.js"
+import { buildPrompt, runChatTurn } from "../../src/chat/loop.js"
 import { appendTurn, readSession } from "../../src/chat/session.js"
 
 class MemSink implements EventSink {
@@ -26,19 +26,17 @@ describe("chat/loop", () => {
   })
 
   it("buildPrompt interleaves turns and tags assistant as the next speaker", () => {
-    const prompt = buildPrompt(
-      [
-        { role: "user", content: "hi", timestamp: "t1" },
-        { role: "assistant", content: "hello", timestamp: "t2" },
-        { role: "user", content: "what now?", timestamp: "t3" },
-      ],
-      CHAT_SYSTEM_PROMPT,
-    )
-    expect(prompt.startsWith("System: ")).toBe(true)
+    const prompt = buildPrompt([
+      { role: "user", content: "hi", timestamp: "t1" },
+      { role: "assistant", content: "hello", timestamp: "t2" },
+      { role: "user", content: "what now?", timestamp: "t3" },
+    ])
     expect(prompt).toContain("User: hi")
     expect(prompt).toContain("Assistant: hello")
     expect(prompt).toContain("User: what now?")
     expect(prompt.endsWith("Assistant:")).toBe(true)
+    // System instructions are passed via systemPromptAppend, not embedded here.
+    expect(prompt.includes("System:")).toBe(false)
   })
 
   it("emits chat.error and returns 64 when session is empty", async () => {

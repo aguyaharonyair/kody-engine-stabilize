@@ -108,7 +108,8 @@ export async function runChatTurn(opts: ChatTurnOptions): Promise<ChatTurnResult
     return { exitCode: 64, error }
   }
 
-  const prompt = buildPrompt(turns, opts.systemPrompt ?? CHAT_SYSTEM_PROMPT)
+  const systemPrompt = opts.systemPrompt ?? CHAT_SYSTEM_PROMPT
+  const prompt = buildPrompt(turns)
   const invoke =
     opts.invokeAgent ??
     ((p: string) =>
@@ -119,6 +120,7 @@ export async function runChatTurn(opts: ChatTurnOptions): Promise<ChatTurnResult
         litellmUrl: opts.litellmUrl,
         verbose: opts.verbose,
         quiet: opts.quiet,
+        systemPromptAppend: systemPrompt,
       }))
 
   let result: AgentResult
@@ -156,10 +158,15 @@ export async function runChatTurn(opts: ChatTurnOptions): Promise<ChatTurnResult
   return { exitCode: 0, reply }
 }
 
-export function buildPrompt(turns: ChatTurn[], systemPrompt: string): string {
-  const header = `System: ${systemPrompt}`
+/**
+ * Builds the user prompt fed to the agent. The system instructions are
+ * delivered separately via `systemPromptAppend` on the SDK — putting them
+ * here as plain text caused the SDK to treat them as user content (so they
+ * never reached the model as a real system prompt).
+ */
+export function buildPrompt(turns: ChatTurn[]): string {
   const body = turns.map((t) => `${t.role === "user" ? "User" : "Assistant"}: ${t.content}`).join("\n\n")
-  return `${header}\n\n${body}\n\nAssistant:`
+  return `${body}\n\nAssistant:`
 }
 
 async function emit(
