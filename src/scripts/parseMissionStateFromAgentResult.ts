@@ -15,7 +15,7 @@
 
 import type { PostflightScript } from "../executables/types.js"
 import type { StateEnvelope } from "./issueStateComment.js"
-import type { LoadedMissionState } from "./missionStateFile.js"
+import type { LoadedMissionState } from "./missionState/index.js"
 
 interface PartialEnvelope {
   cursor: string

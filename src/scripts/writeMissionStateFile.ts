@@ -1,10 +1,11 @@
 /**
- * Postflight: persist ctx.data.nextMissionState into the mission's state file
- * in the consumer repo. Mirror of `writeIssueStateComment` for the file-based
- * mission model.
+ * Postflight: persist ctx.data.nextMissionState via the configured
+ * `MissionStateBackend`. Mirror of `writeIssueStateComment` for the
+ * file-based mission model.
  *
- * Skips the commit when the agent's state is structurally identical to the
- * prior state (idle ticks don't churn the git log).
+ * Backends decide how durability works (contents-API commit, local file,
+ * Actions cache, …). This script just relays prev/next; the backend skips
+ * no-op writes when state is structurally unchanged.
  *
  * If a prior preflight reported a parse error (ctx.data.nextStateParseError),
  * logs it and surfaces exit code 1 so the run fails loudly rather than
@@ -13,9 +14,9 @@
 
 import type { PostflightScript } from "../executables/types.js"
 import type { StateEnvelope } from "./issueStateComment.js"
-import { type LoadedMissionState, writeMissionState } from "./missionStateFile.js"
+import { type LoadedMissionState, resolveBackend } from "./missionState/index.js"
 
-export const writeMissionStateFile: PostflightScript = async (ctx, _profile, _agentResult) => {
+export const writeMissionStateFile: PostflightScript = async (ctx, _profile, _agentResult, args) => {
   const parseError = ctx.data.nextStateParseError as string | undefined
   if (parseError) {
     process.stderr.write(`[kody] mission state write skipped: ${parseError}\n`)
@@ -26,7 +27,7 @@ export const writeMissionStateFile: PostflightScript = async (ctx, _profile, _ag
 
   const next = ctx.data.nextMissionState as StateEnvelope | undefined
   if (!next) {
-    // Agent emitted nothing new; leave the state file alone.
+    // Agent emitted nothing new; leave the state alone.
     return
   }
 
@@ -35,11 +36,11 @@ export const writeMissionStateFile: PostflightScript = async (ctx, _profile, _ag
     throw new Error("writeMissionStateFile: ctx.data.missionState missing — preflight must run first")
   }
 
-  const owner = ctx.config.github.owner
-  const repo = ctx.config.github.repo
-  if (!owner || !repo) {
-    throw new Error("writeMissionStateFile: ctx.config.github.owner/repo must be set")
-  }
-
-  writeMissionState(owner, repo, loaded, next, ctx.cwd)
+  // Backend selection mirrors the preflight load. We re-resolve here rather
+  // than pass through ctx.data because the backend is cheap to construct
+  // and stateless per-tick (lifecycle state lives on the dispatcher's
+  // single instance — see dispatchMissionFileTicks).
+  const missionsDir = String(args?.missionsDir ?? ".kody/missions")
+  const backend = resolveBackend({ config: ctx.config, cwd: ctx.cwd, missionsDir })
+  await backend.save(loaded, next)
 }

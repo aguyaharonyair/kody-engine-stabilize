@@ -1,17 +1,16 @@
 /**
- * Preflight: load a file-based mission (body from disk, state from a tracked
- * repo file) into ctx.data. Mirror of `loadIssueStateComment` for the
- * file-based mission model.
+ * Preflight: load a file-based mission (body from disk, state via the
+ * configured `MissionStateBackend`) into ctx.data. Mirror of
+ * `loadIssueStateComment` for the file-based mission model.
  *
  * Reads the markdown body at `<missionsDir>/<slug>.md` and the mission's
- * state file at `<missionsDir>/<slug>.state.json`. Both live under the same
- * directory so they're easy to read together. Sets:
+ * state via `resolveBackend(config, cwd, missionsDir).load(slug)`. Sets:
  *
  *   ctx.data.missionSlug         the slug
  *   ctx.data.missionTitle        first H1 of the body, or slug formatted
  *   ctx.data.missionIntent       the body (post-frontmatter, if any)
  *   ctx.data.missionStateJson    rendered prior state, or seed on first run
- *   ctx.data.missionState        LoadedMissionState (path, sha, state, created)
+ *   ctx.data.missionState        LoadedMissionState (path, handle, state, created)
  *
  * Script args (via `with:`):
  *   missionsDir   optional — default ".kody/missions"
@@ -21,7 +20,7 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import type { PreflightScript } from "../executables/types.js"
-import { loadMissionState, stateFilePath } from "./missionStateFile.js"
+import { resolveBackend } from "./missionState/index.js"
 
 export const loadMissionFromFile: PreflightScript = async (ctx, _profile, args) => {
   const missionsDir = String(args?.missionsDir ?? ".kody/missions")
@@ -31,12 +30,6 @@ export const loadMissionFromFile: PreflightScript = async (ctx, _profile, args) 
     throw new Error(`loadMissionFromFile: ctx.args.${slugArg} must be a non-empty slug`)
   }
 
-  const owner = ctx.config.github.owner
-  const repo = ctx.config.github.repo
-  if (!owner || !repo) {
-    throw new Error("loadMissionFromFile: ctx.config.github.owner/repo must be set")
-  }
-
   const absPath = path.join(ctx.cwd, missionsDir, `${slug}.md`)
   if (!fs.existsSync(absPath)) {
     throw new Error(`loadMissionFromFile: mission file not found: ${absPath}`)
@@ -44,9 +37,9 @@ export const loadMissionFromFile: PreflightScript = async (ctx, _profile, args) 
   const raw = fs.readFileSync(absPath, "utf-8")
   const { title, body } = parseMissionFile(raw, slug)
 
-  // Load state via the contents API (default GITHUB_TOKEN is sufficient).
-  // Returns a seed envelope when the file doesn't exist yet (first tick).
-  const loaded = loadMissionState(owner, repo, stateFilePath(missionsDir, slug), ctx.cwd)
+  // Backend-agnostic load. Returns a seed envelope on first run.
+  const backend = resolveBackend({ config: ctx.config, cwd: ctx.cwd, missionsDir })
+  const loaded = await backend.load(slug)
 
   ctx.data.missionSlug = slug
   ctx.data.missionTitle = title

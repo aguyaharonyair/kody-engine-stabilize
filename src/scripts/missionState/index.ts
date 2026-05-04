@@ -1,0 +1,50 @@
+/**
+ * Mission state backend resolver.
+ *
+ * Picks an implementation based on `config.missions.stateBackend`:
+ *   "contents-api" (default) — durable in tracked files via GitHub Contents API
+ *   "local-file"             — on-disk files, snapshotted to GitHub Actions cache
+ *
+ * Adding a backend: implement `MissionStateBackend`, drop the file in this
+ * directory, register a case below. Mission-tick scripts (loadMissionFromFile,
+ * writeMissionStateFile) and the dispatcher only see the interface — no
+ * change needed to add a new storage option.
+ */
+
+import type { KodyConfig } from "../../config.js"
+import type { MissionStateBackend } from "./backend.js"
+import { ContentsApiBackend } from "./contentsApiBackend.js"
+import { LocalFileBackend } from "./localFileBackend.js"
+
+export type MissionStateBackendName = "contents-api" | "local-file"
+
+export interface ResolveBackendOptions {
+  config: KodyConfig
+  cwd: string
+  missionsDir: string
+}
+
+export function resolveBackend(opts: ResolveBackendOptions): MissionStateBackend {
+  const owner = opts.config.github?.owner
+  const repo = opts.config.github?.repo
+  if (!owner || !repo) {
+    throw new Error("resolveBackend: config.github.owner and config.github.repo must be set")
+  }
+
+  const requested = opts.config.missions?.stateBackend ?? "contents-api"
+
+  switch (requested) {
+    case "contents-api":
+      return new ContentsApiBackend({ owner, repo, missionsDir: opts.missionsDir, cwd: opts.cwd })
+    case "local-file":
+      return new LocalFileBackend({ cwd: opts.cwd, missionsDir: opts.missionsDir, owner, repo })
+    default: {
+      // Exhaustiveness check — TS will catch unhandled cases at compile time.
+      const _exhaustive: never = requested
+      throw new Error(`resolveBackend: unknown stateBackend "${String(_exhaustive)}"`)
+    }
+  }
+}
+
+export type { LoadedMissionState, MissionStateBackend } from "./backend.js"
+export { isStateUnchanged, slugFromStateFilePath, stateFilePath } from "./backend.js"

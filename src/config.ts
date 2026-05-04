@@ -74,6 +74,17 @@ export interface KodyConfig {
     releaseBranch?: string
     timeoutMs?: number
   }
+  missions?: {
+    /**
+     * Storage backend for file-based mission state.
+     *   "contents-api" (default) — durable tracked file, one commit per change.
+     *   "local-file"             — on-disk file, snapshotted to GitHub Actions
+     *                              cache between workflow runs. Eliminates
+     *                              commit churn but is bound to the cache
+     *                              lifecycle (evicted after 7 days idle).
+     */
+    stateBackend?: "contents-api" | "local-file"
+  }
 }
 
 export interface ProviderModel {
@@ -157,7 +168,22 @@ export function loadConfig(projectDir: string = process.cwd()): KodyConfig {
     aliases: mergeAliases(raw.aliases),
     classify: parseClassifyConfig(raw.classify),
     release: parseReleaseConfig(raw.release),
+    missions: parseMissionsConfig(raw.missions),
   }
+}
+
+function parseMissionsConfig(raw: unknown): KodyConfig["missions"] {
+  if (!raw || typeof raw !== "object") return undefined
+  const r = raw as Record<string, unknown>
+  const out: NonNullable<KodyConfig["missions"]> = {}
+  if (r.stateBackend === "contents-api" || r.stateBackend === "local-file") {
+    out.stateBackend = r.stateBackend
+  } else if (typeof r.stateBackend === "string") {
+    throw new Error(
+      `kody.config.json: missions.stateBackend must be "contents-api" or "local-file", got "${r.stateBackend}"`,
+    )
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /**
