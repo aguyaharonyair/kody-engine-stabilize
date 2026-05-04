@@ -98,4 +98,59 @@ describe("executor: shell entry timeout", () => {
     expect(result.exitCode).toBe(124)
     expect(result.reason).toMatch(/timed out after 1s/)
   }, 10_000)
+
+  // Regression: spawnSync's `timeout` option only signals the immediate
+  // child — a backgrounded subshell (e.g. `gh` invoking `curl`) survives
+  // past the deadline. The fix spawns bash with `detached: true` (so it's
+  // its own process group leader) and signals the WHOLE group on timeout.
+  // We verify by having the script schedule a delayed `touch leaked.marker`
+  // in a backgrounded subshell, then sleep forever. If the group is killed
+  // properly, the marker never appears.
+  it("kills backgrounded descendants on timeout (process group)", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "kody-shell-timeout-pg-"))
+    const exeName = "timeout-fixture-pg"
+    const exeDir = path.join(root, ".kody", "executables", exeName)
+    fs.mkdirSync(exeDir, { recursive: true })
+    const markerPath = path.join(root, "leaked.marker")
+    fs.writeFileSync(
+      path.join(exeDir, "leak.sh"),
+      `#!/usr/bin/env bash\n( sleep 3; touch "${markerPath}" ) &\nsleep 30\n`,
+      { mode: 0o755 },
+    )
+    const profile = {
+      name: exeName,
+      role: "utility",
+      describe: "fixture",
+      kind: "oneshot",
+      inputs: [],
+      claudeCode: {
+        model: "inherit",
+        permissionMode: "acceptEdits",
+        maxTurns: 0,
+        maxThinkingTokens: null,
+        systemPromptAppend: null,
+        tools: [],
+        hooks: [],
+        skills: [],
+        commands: [],
+        subagents: [],
+        plugins: [],
+        mcpServers: [],
+      },
+      cliTools: [],
+      scripts: {
+        preflight: [{ script: "skipAgent" }, { shell: "leak.sh", timeoutSec: 1 }],
+        postflight: [],
+      },
+    }
+    fs.writeFileSync(path.join(exeDir, "profile.json"), JSON.stringify(profile, null, 2))
+
+    process.chdir(root)
+    const result = await runExecutable(exeName, { cliArgs: {}, cwd: root, skipConfig: true })
+    expect(result.exitCode).toBe(124)
+
+    // Wait past when the leaked descendant would have written the marker.
+    await new Promise((resolve) => setTimeout(resolve, 4_000))
+    expect(fs.existsSync(markerPath)).toBe(false)
+  }, 15_000)
 })

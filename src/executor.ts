@@ -7,7 +7,7 @@
  * it was handed and the script catalog.
  */
 
-import { spawnSync } from "node:child_process"
+import { spawn } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import type { AgentResult } from "./agent.js"
@@ -149,7 +149,7 @@ export async function runExecutable(profileName: string, input: ExecutorInput): 
     for (const entry of profile.scripts.preflight) {
       if (!shouldRun(entry, ctx)) continue
       if (entry.shell) {
-        runShellEntry(entry, ctx, profile)
+        await runShellEntry(entry, ctx, profile)
         // Shell entries record their outcome via postflight (recordOutcome →
         // saveTaskState → notifyTerminal → advanceFlow). Even on non-zero
         // exit, fall through so the state machine can advance — postflights
@@ -192,7 +192,7 @@ export async function runExecutable(profileName: string, input: ExecutorInput): 
       const label = entry.script ?? entry.shell ?? "<unknown>"
       try {
         if (entry.shell) {
-          runShellEntry(entry, ctx, profile)
+          await runShellEntry(entry, ctx, profile)
         } else {
           const fn = postflightScripts[entry.script!]
           if (!fn) return finish({ exitCode: 99, reason: `postflight script not registered: ${entry.script}` })
@@ -372,6 +372,8 @@ function resolveShellTimeoutMs(entry: ScriptEntry): number {
   return DEFAULT_SHELL_TIMEOUT_MS
 }
 
+const SIGKILL_GRACE_MS = 5_000
+
 /**
  * Invoke a `.sh` entry. Args from `entry.with` are passed positionally;
  * `ctx.args` and `ctx.config` are exposed as env vars
@@ -382,11 +384,16 @@ function resolveShellTimeoutMs(entry: ScriptEntry): number {
  *   `KODY_PR_URL=<url>`    — write into ctx.output.prUrl.
  *   `KODY_REASON=<text>`   — write into ctx.output.reason.
  * Non-zero exit is treated as a preflight failure (executor bails per the
- * standard skipAgent + exit rule). Timeout (SIGTERM via Node's `timeout`
- * option) is surfaced as exit 124 with an explicit "shell '<name>' timed
- * out after Ns" reason — distinct from a script's own non-zero exit.
+ * standard skipAgent + exit rule).
+ *
+ * Timeout handling: bash is spawned with `detached: true` so it becomes the
+ * leader of a new process group. On timeout we signal the WHOLE group
+ * (`process.kill(-pgid, ...)`), first SIGTERM then SIGKILL after a short
+ * grace, so descendants (e.g. a `gh` invoking `curl`) cannot leak past the
+ * deadline. Surfaced as exit 124 with an explicit "shell '<name>' timed out
+ * after Ns" reason — distinct from a script's own non-zero exit.
  */
-function runShellEntry(entry: ScriptEntry, ctx: Context, profile: Profile): void {
+async function runShellEntry(entry: ScriptEntry, ctx: Context, profile: Profile): Promise<void> {
   const shellName = entry.shell!
   const shellPath = path.join(profile.dir, shellName)
   if (!fs.existsSync(shellPath)) {
@@ -407,18 +414,75 @@ function runShellEntry(entry: ScriptEntry, ctx: Context, profile: Profile): void
   }
 
   const timeoutMs = resolveShellTimeoutMs(entry)
-  const r = spawnSync("bash", [shellPath, ...positional], {
+
+  // detached: true → POSIX setsid, so the child becomes its own process
+  // group leader (pgid === pid). That lets us kill descendants on timeout
+  // by signalling the negative pid (process group), not just bash itself.
+  const child = spawn("bash", [shellPath, ...positional], {
     cwd: ctx.cwd,
-    encoding: "utf-8",
     env,
     stdio: ["pipe", "pipe", "pipe"],
-    timeout: timeoutMs,
+    detached: true,
   })
 
-  const stdout = r.stdout ?? ""
-  const stderr = r.stderr ?? ""
-  if (stdout) process.stdout.write(stdout)
-  if (stderr) process.stderr.write(stderr)
+  let stdout = ""
+  let stderr = ""
+  child.stdout?.on("data", (chunk: Buffer) => {
+    const s = chunk.toString("utf-8")
+    stdout += s
+    process.stdout.write(s)
+  })
+  child.stderr?.on("data", (chunk: Buffer) => {
+    const s = chunk.toString("utf-8")
+    stderr += s
+    process.stderr.write(s)
+  })
+
+  let timedOut = false
+  let killTimer: NodeJS.Timeout | undefined
+  let escalateTimer: NodeJS.Timeout | undefined
+
+  const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null; spawnErr?: Error }>(
+    (resolve) => {
+      let settled = false
+      const settle = (code: number | null, signal: NodeJS.Signals | null, spawnErr?: Error) => {
+        if (settled) return
+        settled = true
+        if (killTimer) clearTimeout(killTimer)
+        if (escalateTimer) clearTimeout(escalateTimer)
+        resolve({ code, signal, spawnErr })
+      }
+
+      child.on("error", (err) => settle(null, null, err))
+      child.on("close", (code, signal) => settle(code, signal))
+
+      if (typeof child.pid === "number") {
+        const pgid = child.pid
+        killTimer = setTimeout(() => {
+          timedOut = true
+          try {
+            process.kill(-pgid, "SIGTERM")
+          } catch {
+            /* group may already be gone */
+          }
+          escalateTimer = setTimeout(() => {
+            try {
+              process.kill(-pgid, "SIGKILL")
+            } catch {
+              /* ditto */
+            }
+          }, SIGKILL_GRACE_MS)
+        }, timeoutMs)
+      }
+    },
+  )
+
+  if (result.spawnErr) {
+    ctx.skipAgent = true
+    ctx.output.exitCode = 99
+    ctx.output.reason = `shell '${shellName}' failed to spawn: ${result.spawnErr.message}`
+    return
+  }
 
   // Stdout marker: opt-in signal that the agent should be bypassed AND
   // the preflight already did all the work. Set exitCode=0 too so
@@ -433,10 +497,6 @@ function runShellEntry(entry: ScriptEntry, ctx: Context, profile: Profile): void
   const reasonMatch = stdout.match(/^KODY_REASON=(.+)$/m)
   if (reasonMatch?.[1]) ctx.output.reason = reasonMatch[1].trim()
 
-  // spawnSync surfaces a timeout via r.signal (typically "SIGTERM") with
-  // r.status === null. Distinguish that from a real non-zero exit so the
-  // operator sees "timed out after Ns" instead of an opaque "exited -1".
-  const timedOut = r.status === null && r.signal !== null
   if (timedOut) {
     ctx.skipAgent = true
     const seconds = Math.round(timeoutMs / 1000)
@@ -444,12 +504,12 @@ function runShellEntry(entry: ScriptEntry, ctx: Context, profile: Profile): void
       ctx.output.exitCode = 124
     }
     if (!ctx.output.reason) {
-      ctx.output.reason = `shell '${shellName}' timed out after ${seconds}s (signal=${r.signal})`
+      ctx.output.reason = `shell '${shellName}' timed out after ${seconds}s (process group signalled SIGTERM/SIGKILL)`
     }
     return
   }
 
-  const exit = r.status ?? -1
+  const exit = result.code ?? -1
   if (exit !== 0) {
     ctx.skipAgent = true
     if (ctx.output.exitCode === undefined || ctx.output.exitCode === 0) {
