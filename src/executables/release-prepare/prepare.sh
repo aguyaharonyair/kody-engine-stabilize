@@ -106,11 +106,22 @@ PY
 
 generate_changelog() {
   local new_version="$1"
-  local last_tag
-  if last_tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null); then
-    range="${last_tag}..HEAD"
-    git log "$range" --pretty=format:'%s||%h' --no-merges 2>/dev/null || true
+  local last_tag count
+  # actions/checkout@v4 with fetch-depth: 0 still does NOT fetch tags by
+  # default — operators have to opt in via `fetch-tags: true`. When tags
+  # are absent, `git describe` returns empty and the else-branch's
+  # 100-commit window can over- or under-shoot. Try once to backfill
+  # tags before describing, ignoring failures (offline/sandbox runs).
+  if ! last_tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null); then
+    git fetch --tags --quiet 2>/dev/null || true
+    last_tag=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+  fi
+  if [[ -n "$last_tag" ]]; then
+    count=$(git rev-list --count "${last_tag}..HEAD" --no-merges 2>/dev/null || echo "?")
+    echo "  changelog: ${count} commits since ${last_tag}" >&2
+    git log "${last_tag}..HEAD" --pretty=format:'%s||%h' --no-merges 2>/dev/null || true
   else
+    echo "  changelog: no previous v* tag found — using last 100 commits" >&2
     git log -n100 HEAD --pretty=format:'%s||%h' --no-merges 2>/dev/null || true
   fi
 }

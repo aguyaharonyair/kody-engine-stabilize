@@ -66,7 +66,10 @@ read_changelog_section() {
   fi
   printf '%s' "$raw" | awk -v ver="$ver" '
     BEGIN { capture = 0 }
-    # Match: "## [VER] ..." or "## VER ..." (VER as the first word/bracket).
+    # Match all observed header shapes:
+    #   "## [0.25.0] - 2026-04-15"   (bracketed, dash separator)
+    #   "## 0.22.0 (2026-03-25)"     (bare, parenthesized date)
+    #   "## v0.25.5 — 2026-05-05"    (v-prefixed, em-dash, kody release-prepare style)
     /^##[[:space:]]/ {
       if (capture) { exit }
       header = $0
@@ -74,6 +77,7 @@ read_changelog_section() {
       sub(/^\[/, "", header); sub(/\].*/, "", header)
       sub(/[[:space:]].*/, "", header)
       sub(/[(].*/, "", header)
+      sub(/^v/, "", header)
       if (header == ver) { capture = 1; next }
     }
     capture { print }
