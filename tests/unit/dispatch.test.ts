@@ -478,14 +478,14 @@ describe("dispatch: release orchestrator + sibling primitives", () => {
     })
   })
 
-  it("'@kody release minor' drops bump (orchestrator profile does not declare it)", () => {
+  it("'@kody release minor' parses bump enum (release executable declares it after the merged-flow refactor)", () => {
     process.env.GITHUB_EVENT_PATH = writeEvent({
       comment: { body: "@kody release minor" },
       issue: { number: 33 },
     })
     expect(autoDispatch()).toEqual({
       executable: "release",
-      cliArgs: { issue: 33 },
+      cliArgs: { issue: 33, bump: "minor" },
       target: 33,
     })
   })

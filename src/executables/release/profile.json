@@ -1,14 +1,38 @@
 {
   "name": "release",
-  "role": "orchestrator",
-  "describe": "Release orchestrator: drives release-prepare → merge PR → release-publish → release-deploy. No agent — postflight entries ARE the transition table, evaluated top-to-bottom via runWhen.",
+  "role": "utility",
+  "phase": "shipped",
+  "describe": "Single-job release flow: prepare → wait CI → merge → publish → deploy → notify. No orchestrator chain — runs end-to-end inside one workflow run.",
   "inputs": [
     {
       "name": "issue",
       "flag": "--issue",
       "type": "int",
       "required": true,
-      "describe": "GitHub issue number to drive the release flow on."
+      "describe": "GitHub issue number that triggered the release."
+    },
+    {
+      "name": "bump",
+      "flag": "--bump",
+      "type": "enum",
+      "values": ["patch", "minor", "major"],
+      "required": false,
+      "describe": "Version bump increment. Default patch."
+    },
+    {
+      "name": "dry-run",
+      "flag": "--dry-run",
+      "type": "bool",
+      "required": false,
+      "describe": "Print plan without writing files, committing, or opening a PR."
+    },
+    {
+      "name": "prefer",
+      "flag": "--prefer",
+      "type": "enum",
+      "values": ["ours", "theirs"],
+      "required": false,
+      "describe": "On release/vX.Y.Z branch collision: 'ours' force-pushes; 'theirs' reuses the existing PR."
     }
   ],
   "claudeCode": {
@@ -38,54 +62,34 @@
           "description": "kody flow: release"
         }
       },
-      {
-        "script": "setLifecycleLabel",
-        "with": {
-          "label": "kody:orchestrating",
-          "color": "1d76db",
-          "description": "kody: orchestrating a multi-stage flow"
-        }
-      },
       { "script": "loadIssueContext" },
       { "script": "loadTaskState" },
+      { "shell": "release.sh" },
       { "script": "skipAgent" }
     ],
     "postflight": [
-      { "script": "startFlow", "with": { "entry": "release-prepare", "target": "issue" } },
-
-      { "script": "waitForCi",
-        "with": { "timeoutMinutes": 60, "pollSeconds": 30, "initialWaitSeconds": 15, "maxFixCiAttempts": 0 },
-        "runWhen": { "data.taskState.core.lastOutcome.type": "RELEASE_PREPARE_COMPLETED" } },
-
-      { "script": "mergeReleasePr",
-        "runWhen": { "data.action.type": "CI_PASSED" } },
-
-      { "script": "dispatch", "with": { "next": "release-publish", "target": "issue" },
-        "runWhen": { "data.taskState.core.lastOutcome.type": "RELEASE_MERGE_COMPLETED" } },
-
-      { "script": "dispatch", "with": { "next": "release-deploy", "target": "issue" },
-        "runWhen": { "data.taskState.core.lastOutcome.type": "RELEASE_PUBLISH_COMPLETED" } },
-
-      { "script": "waitForCi",
-        "with": { "timeoutMinutes": 60, "pollSeconds": 30, "initialWaitSeconds": 15, "maxFixCiAttempts": 3 },
-        "runWhen": { "data.taskState.core.lastOutcome.type": ["RELEASE_DEPLOY_COMPLETED", "FIX_CI_COMPLETED"] } },
-
-      { "script": "dispatch", "with": { "next": "fix-ci", "target": "pr" },
-        "runWhen": { "data.action.type": "CI_FAILED" } },
-
-      { "script": "finishFlow",
-        "with": { "reason": "release-completed", "label": "kody:done", "color": "0e8a16", "description": "kody: release complete" },
-        "runWhen": { "data.action.type": "CI_PASSED" } },
-
-      { "script": "finishFlow",
-        "with": { "reason": "release-failed", "label": "kody:failed", "color": "e11d21", "description": "kody: release flow failed" },
-        "runWhen": { "data.action.type": ["CI_GIVEUP", "CI_TIMEOUT"] } },
-
-      { "script": "finishFlow",
-        "with": { "reason": "release-failed", "label": "kody:failed", "color": "e11d21", "description": "kody: release flow failed" },
-        "runWhen": { "data.taskState.core.lastOutcome.type": ["RELEASE_PREPARE_FAILED", "RELEASE_MERGE_FAILED", "RELEASE_PUBLISH_FAILED", "RELEASE_DEPLOY_FAILED", "FIX_CI_FAILED"] } },
-
-      { "script": "persistFlowState" }
+      { "script": "recordOutcome" },
+      { "script": "saveTaskState" },
+      {
+        "script": "finishFlow",
+        "with": {
+          "reason": "release-completed",
+          "label": "kody:done",
+          "color": "0e8a16",
+          "description": "kody: release complete"
+        },
+        "runWhen": { "data.action.type": "RELEASE_COMPLETED" }
+      },
+      {
+        "script": "finishFlow",
+        "with": {
+          "reason": "release-failed",
+          "label": "kody:failed",
+          "color": "e11d21",
+          "description": "kody: release flow failed"
+        },
+        "runWhen": { "data.action.type": "RELEASE_FAILED" }
+      }
     ]
   }
 }
