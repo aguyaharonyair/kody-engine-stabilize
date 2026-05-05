@@ -119,7 +119,20 @@ export function autoDispatch(opts?: {
   if (!executable) {
     executable = isPr ? (opts?.config?.defaultPrExecutable ?? "fix") : (opts?.config?.defaultExecutable ?? null)
   }
-  if (!executable) return null
+  if (!executable) {
+    // Surface why dispatch gave up — currently the consumer just sees
+    // "no action for event issue_comment" and has no way to tell whether
+    // the executable wasn't found, the alias was missing, or there's no
+    // default. This breadcrumb makes the gate observable without changing
+    // behavior.
+    const profileMissing = aliased ? getProfileInputs(aliased) === null : true
+    process.stderr.write(
+      `[kody] dispatch: no executable resolved for issue_comment ` +
+        `(firstToken=${firstToken ?? "<none>"}, aliased=${aliased ?? "<none>"}, ` +
+        `profileFound=${!profileMissing}, defaultExecutable=${opts?.config?.defaultExecutable ?? "<unset>"})\n`,
+    )
+    return null
+  }
 
   // Inputs drive arg parsing and injection. If the profile isn't registered
   // (e.g. a consumer-configured default pointing at something not bundled),
