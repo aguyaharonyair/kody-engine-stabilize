@@ -1,0 +1,46 @@
+{
+  "name": "smoke-container",
+  "role": "container",
+  "describe": "Smoke-test container that runs two echo children sequentially. Used by tests/unit/container.test.ts to validate end-to-end profile loading, not a real workflow.",
+  "kind": "oneshot",
+  "inputs": [
+    {
+      "name": "issue",
+      "flag": "--issue",
+      "type": "int",
+      "required": true,
+      "describe": "Issue number passed through to children."
+    }
+  ],
+  "claudeCode": {
+    "model": "inherit",
+    "permissionMode": "default",
+    "maxTurns": 0,
+    "maxThinkingTokens": null,
+    "systemPromptAppend": null,
+    "tools": [],
+    "hooks": [],
+    "skills": [],
+    "commands": [],
+    "subagents": [],
+    "plugins": [],
+    "mcpServers": []
+  },
+  "cliTools": [],
+  "scripts": {
+    "preflight": [],
+    "postflight": []
+  },
+  "children": [
+    {
+      "exec": "echo-a",
+      "target": "issue",
+      "next": { "ECHO_A_COMPLETED": "echo-b", "*": "abort" }
+    },
+    {
+      "exec": "echo-b",
+      "target": "issue",
+      "next": { "ECHO_B_COMPLETED": "done", "*": "abort" }
+    }
+  ]
+}

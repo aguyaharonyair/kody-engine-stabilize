@@ -21,14 +21,18 @@ export interface Profile {
   /**
    * Semantic role — what this executable IS, not when it runs.
    *   - primitive:    single-step agent executor (flow → agent → verify → commit → PR).
-   *   - orchestrator: no-agent, drives primitives via a postflight transition table.
+   *   - orchestrator: no-agent, drives primitives via a postflight transition table
+   *                   (comment-based, one GHA run per step).
+   *   - container:    no-agent, runs declared `children` sequentially in-process
+   *                   (one GHA run for the whole flow). Routing is done by per-child
+   *                   `next` maps over action types — no @kody comments dispatched.
    *   - watch:        scheduled observer that inspects repo state and may trigger other executables.
    *   - utility:      no-agent, one-off administrative work (scaffolding, release, etc.).
    *
    * Roles enforce shape at profile-load time and let help/dispatch treat
    * executables differently by category.
    */
-  role: "primitive" | "orchestrator" | "watch" | "utility"
+  role: "primitive" | "orchestrator" | "container" | "watch" | "utility"
   /**
    * Execution model — orthogonal to `role`.
    * `oneshot` (default): single invocation on demand.
@@ -65,8 +69,42 @@ export interface Profile {
    * Artifact entry into the task-state comment's `artifacts` map.
    */
   outputArtifacts: OutputArtifactSpec[]
+  /**
+   * Container children — required when role === "container", forbidden otherwise.
+   * Defines the in-process step sequence and routing map. See ContainerChild.
+   */
+  children?: ContainerChild[]
   /** Absolute directory the profile was loaded from. Used to resolve prompt.md. */
   dir: string
+}
+
+/**
+ * One step in a container's child sequence.
+ *
+ * The container executor runs the first child, reads the resulting action
+ * type from `state.core.lastOutcome`, then looks it up in `next`:
+ *   - exact match → either the name of another child in this container, or
+ *     the literal "done" / "abort"
+ *   - "*" wildcard → fallback when no exact match
+ *   - no match → container aborts
+ */
+export interface ContainerChild {
+  /** Name of the executable to invoke (must resolve via the registry). */
+  exec: string
+  /**
+   * Where to source the target identifier from when invoking this child.
+   *   - "issue": pass --issue <ctx.args.issue>
+   *   - "pr":    parse PR number from state.core.prUrl, pass --pr <N>.
+   *              If state.core.prUrl is not set, the container aborts with
+   *              an AGENT_NOT_RUN action.
+   */
+  target: "issue" | "pr"
+  /**
+   * Map from action.type → next step. Each value must be the name of another
+   * child in this container, "done" (exit 0), or "abort" (exit 1). Lookup is
+   * exact-match first, then "*" as a wildcard fallback.
+   */
+  next: Record<string, string>
 }
 
 export interface InputArtifactSpec {

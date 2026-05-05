@@ -12,6 +12,7 @@ import * as path from "node:path"
 import type {
   ClaudeCodeSpec,
   CliToolSpec,
+  ContainerChild,
   InputArtifactSpec,
   InputSpec,
   OutputArtifactSpec,
@@ -21,7 +22,8 @@ import type {
 
 const VALID_INPUT_TYPES = new Set(["int", "string", "bool", "enum"])
 const VALID_PERMISSION_MODES = new Set(["default", "acceptEdits", "plan", "bypassPermissions"])
-const VALID_ROLES = new Set(["primitive", "orchestrator", "watch", "utility"])
+const VALID_ROLES = new Set(["primitive", "orchestrator", "container", "watch", "utility"])
+const VALID_CONTAINER_CHILD_TARGETS = new Set(["issue", "pr"])
 const VALID_PHASES = new Set(["research", "planning", "implementing", "reviewing", "shipped", "failed", "idle"])
 
 export class ProfileError extends Error {
@@ -70,6 +72,8 @@ export function loadProfile(profilePath: string): Profile {
     phase = r.phase as Profile["phase"]
   }
 
+  const children = parseContainerChildren(profilePath, role, r.children)
+
   const profile: Profile = {
     name: requireString(profilePath, r, "name"),
     describe: typeof r.describe === "string" ? r.describe : "",
@@ -84,6 +88,7 @@ export function loadProfile(profilePath: string): Profile {
     outputContract: r.outputContract as Profile["outputContract"],
     inputArtifacts: parseInputArtifacts(profilePath, r.input),
     outputArtifacts: parseOutputArtifacts(profilePath, r.output),
+    children,
     dir: path.dirname(profilePath),
   }
 
@@ -266,6 +271,53 @@ function parseOutputArtifacts(p: string, raw: unknown): OutputArtifactSpec[] {
       format: typeof r.format === "string" ? r.format : "text",
       from: requireString(p, r, "from"),
     })
+  }
+  return out
+}
+
+/**
+ * Parse + validate a container's `children` array. Enforces the invariant
+ * that role==="container" iff children is a non-empty array.
+ */
+function parseContainerChildren(p: string, role: Profile["role"], raw: unknown): ContainerChild[] | undefined {
+  const isContainer = role === "container"
+  const present = raw !== undefined && raw !== null
+
+  if (!isContainer) {
+    if (!present) return undefined
+    if (Array.isArray(raw) && raw.length === 0) return undefined
+    throw new ProfileError(p, `"children" is only allowed when role === "container"`)
+  }
+
+  if (!present) {
+    throw new ProfileError(p, `role: "container" requires a non-empty "children" array`)
+  }
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new ProfileError(p, `role: "container" requires a non-empty "children" array`)
+  }
+
+  const out: ContainerChild[] = []
+  for (const [i, item] of (raw as unknown[]).entries()) {
+    if (!item || typeof item !== "object") {
+      throw new ProfileError(p, `children[${i}] must be an object { exec, target, next }`)
+    }
+    const r = item as Record<string, unknown>
+    const exec = requireString(p, r, "exec")
+    const target = requireString(p, r, "target")
+    if (!VALID_CONTAINER_CHILD_TARGETS.has(target)) {
+      throw new ProfileError(p, `children[${i}].target must be "issue" or "pr"`)
+    }
+    if (!r.next || typeof r.next !== "object" || Array.isArray(r.next)) {
+      throw new ProfileError(p, `children[${i}].next must be an object mapping action types to next step`)
+    }
+    const next: Record<string, string> = {}
+    for (const [k, v] of Object.entries(r.next as Record<string, unknown>)) {
+      if (typeof v !== "string" || v.length === 0) {
+        throw new ProfileError(p, `children[${i}].next["${k}"] must be a non-empty string`)
+      }
+      next[k] = v
+    }
+    out.push({ exec, target: target as ContainerChild["target"], next })
   }
   return out
 }

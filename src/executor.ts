@@ -14,12 +14,15 @@ import type { AgentResult } from "./agent.js"
 import { runAgent } from "./agent.js"
 import type { KodyConfig } from "./config.js"
 import { loadConfig, parseProviderModel } from "./config.js"
-import type { Context, InputSpec, Profile, ScriptEntry } from "./executables/types.js"
+import type { ContainerChild, Context, InputSpec, Profile, ScriptEntry } from "./executables/types.js"
 import { startLitellmIfNeeded } from "./litellm.js"
 import { loadProfile, validateScriptReferences } from "./profile.js"
 import { resolveExecutable } from "./registry.js"
 import { allScriptNames, postflightScripts, preflightScripts } from "./scripts/index.js"
+import { type Action, readTaskState, type TaskState, type TaskTarget } from "./state.js"
 import { firstRequiredFailure, verifyCliTools } from "./tools.js"
+
+const CONTAINER_MAX_ITERATIONS = 50
 
 export interface ExecutorInput {
   cliArgs: Record<string, unknown>
@@ -30,6 +33,18 @@ export interface ExecutorInput {
   skipConfig?: boolean
   verbose?: boolean
   quiet?: boolean
+  /**
+   * Test seam: how a container resolves child invocations. Defaults to
+   * `runExecutable` (so containers truly nest). Tests inject a stub to
+   * avoid spinning up real executables. Production callers leave this unset.
+   */
+  __runChild?: (name: string, input: ExecutorInput) => Promise<ExecutorOutput>
+  /**
+   * Test seam: how a container reads task state between children. Defaults
+   * to `readTaskState`. Tests inject a stub that returns the state a mock
+   * child "wrote" to skip the gh round-trip.
+   */
+  __readTaskState?: (target: TaskTarget, number: number, cwd?: string) => TaskState
 }
 
 export interface ExecutorOutput {
@@ -166,9 +181,16 @@ export async function runExecutable(profileName: string, input: ExecutorInput): 
       }
     }
 
-    // ── Agent ─────────────────────────────────────────────────────────────────
+    // ── Agent (or Container children loop) ───────────────────────────────────
     let agentResult: AgentResult | null = null
-    if (!ctx.skipAgent) {
+    if (profile.role === "container") {
+      // Containers never run their own agent and never consult the postflight
+      // transition table; their orchestration is the children loop below.
+      // The postflight on a container should be minimal — typically just
+      // persistFlowState — and runs after the loop terminates as usual.
+      ctx.skipAgent = true
+      await runContainerLoop(profile, ctx, input)
+    } else if (!ctx.skipAgent) {
       const prompt = ctx.data.prompt as string | undefined
       if (!prompt) {
         return finish({ exitCode: 99, reason: "composePrompt did not produce a prompt (ctx.data.prompt missing)" })
@@ -540,6 +562,189 @@ async function runShellEntry(entry: ScriptEntry, ctx: Context, profile: Profile)
 
 function envKey(name: string): string {
   return name.toUpperCase().replace(/-/g, "_")
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Container loop. Runs children sequentially in-process, routing by each
+// child's `next` map over the action type emitted into state.core.lastOutcome.
+// Hard cap on iterations so a malformed routing table can't infinite-loop.
+// ────────────────────────────────────────────────────────────────────────────
+
+async function runContainerLoop(profile: Profile, ctx: Context, input: ExecutorInput): Promise<void> {
+  const children = profile.children
+  if (!children || children.length === 0) {
+    process.stderr.write(`[kody container] profile "${profile.name}" has no children — nothing to run\n`)
+    ctx.output.exitCode = 0
+    ctx.output.reason = "container has no children"
+    return
+  }
+
+  const runChild = input.__runChild ?? ((name, opts) => runExecutable(name, opts))
+  const reader = input.__readTaskState ?? readTaskState
+
+  const issueNumber = ctx.args.issue as number | undefined
+  let currentIdx = 0
+  let iteration = 0
+
+  while (currentIdx >= 0 && currentIdx < children.length) {
+    iteration++
+    if (iteration > CONTAINER_MAX_ITERATIONS) {
+      const reason = `container exceeded ${CONTAINER_MAX_ITERATIONS} iterations — possible routing loop`
+      process.stderr.write(`[kody container] aborting: ${reason}\n`)
+      ctx.output.exitCode = 1
+      ctx.output.reason = reason
+      return
+    }
+
+    const child = children[currentIdx]!
+    process.stderr.write(`[kody container] step ${iteration}: invoking ${child.exec}\n`)
+
+    // Idempotency: if state already shows a *_COMPLETED action for this child,
+    // skip the invocation and use the stored outcome to route. Lets a
+    // re-invoked container resume from where the prior run left off without
+    // re-doing committed work (e.g. a plan that already produced an artifact).
+    const priorState = readContainerState(ctx, child, reader)
+    const priorAction = priorState.executables?.[child.exec]?.lastAction
+    let actionType: string | undefined
+    if (priorAction && /_COMPLETED$/i.test(priorAction.type)) {
+      process.stderr.write(`[kody container] skipping ${child.exec}: already completed (${priorAction.type})\n`)
+      actionType = priorAction.type
+    } else {
+      // Derive cliArgs from child.target. target=pr requires a known PR;
+      // missing prUrl aborts the container with AGENT_NOT_RUN, mirroring how
+      // legacy `dispatch.ts` handled the same situation.
+      let cliArgs: Record<string, unknown>
+      if (child.target === "pr") {
+        const prUrl = priorState.core?.prUrl
+        const prNumber = prUrl ? parsePrNumber(prUrl) : null
+        if (!prNumber) {
+          const reason = `container child "${child.exec}" needs --pr but state.core.prUrl is unset`
+          process.stderr.write(`[kody container] aborting: ${reason}\n`)
+          ctx.output.exitCode = 1
+          ctx.output.reason = reason
+          // Record a synthetic AGENT_NOT_RUN action for downstream postflights.
+          const action: Action = {
+            type: "AGENT_NOT_RUN",
+            payload: { reason, dispatchTarget: "pr", child: child.exec },
+            timestamp: new Date().toISOString(),
+          }
+          ctx.data.action = action
+          return
+        }
+        cliArgs = { pr: prNumber }
+      } else {
+        if (issueNumber === undefined) {
+          const reason = `container child "${child.exec}" needs --issue but ctx.args.issue is unset`
+          process.stderr.write(`[kody container] aborting: ${reason}\n`)
+          ctx.output.exitCode = 1
+          ctx.output.reason = reason
+          return
+        }
+        cliArgs = { issue: issueNumber }
+      }
+
+      let childOut: ExecutorOutput
+      try {
+        childOut = await runChild(child.exec, {
+          cliArgs,
+          cwd: input.cwd,
+          config: input.config,
+          skipConfig: input.skipConfig,
+          verbose: input.verbose,
+          quiet: input.quiet,
+        })
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        process.stderr.write(`[kody container] child "${child.exec}" crashed: ${msg}\n`)
+        ctx.output.exitCode = 1
+        ctx.output.reason = `child "${child.exec}" crashed: ${msg}`
+        return
+      }
+
+      // Reload the freshly-written state to discover the action this child
+      // emitted. saveTaskState (the standard postflight) is the canonical
+      // writer; readTaskState reads the same comment back.
+      const next = readContainerState(ctx, child, reader)
+      ctx.data.taskState = next
+      const actionFromState = next.core?.lastOutcome?.type
+      actionType = actionFromState ?? (childOut.exitCode === 0 ? "RUN_COMPLETED" : "RUN_FAILED")
+    }
+
+    // Route based on action type. Exact match → wildcard "*" → abort.
+    const route = child.next[actionType] ?? child.next["*"]
+    if (!route) {
+      const reason = `no route for action "${actionType}" from child "${child.exec}"`
+      process.stderr.write(`[kody container] aborting: ${reason}\n`)
+      ctx.output.exitCode = 1
+      ctx.output.reason = reason
+      return
+    }
+
+    process.stderr.write(`[kody container] outcome ${actionType}: dispatching to ${route}\n`)
+
+    if (route === "done") {
+      ctx.output.exitCode = 0
+      return
+    }
+    if (route === "abort") {
+      ctx.output.exitCode = 1
+      ctx.output.reason = `container aborted by route from "${child.exec}" on ${actionType}`
+      return
+    }
+
+    const nextIdx = children.findIndex((c) => c.exec === route)
+    if (nextIdx < 0) {
+      const reason = `container route "${route}" does not match any declared child exec name`
+      process.stderr.write(`[kody container] aborting: ${reason}\n`)
+      ctx.output.exitCode = 1
+      ctx.output.reason = reason
+      return
+    }
+    currentIdx = nextIdx
+  }
+}
+
+/**
+ * Read the latest task state from disk (or fall back to whatever the
+ * preflight cached if no issue is available). Always reads fresh between
+ * children so that the child's just-written state is visible.
+ */
+function readContainerState(
+  ctx: Context,
+  _child: ContainerChild,
+  reader: (target: TaskTarget, number: number, cwd?: string) => TaskState,
+): TaskState {
+  const issueNumber = ctx.args.issue as number | undefined
+  if (issueNumber !== undefined) {
+    try {
+      return reader("issue", issueNumber, ctx.cwd)
+    } catch {
+      // Fall through to cached state below.
+    }
+  }
+  if (ctx.data.taskState && typeof ctx.data.taskState === "object") {
+    return ctx.data.taskState as TaskState
+  }
+  return {
+    schemaVersion: 1,
+    core: {
+      phase: "idle",
+      status: "pending",
+      currentExecutable: null,
+      lastOutcome: null,
+      attempts: {},
+    },
+    executables: {},
+    artifacts: {},
+    history: [],
+  }
+}
+
+function parsePrNumber(url: string): number | null {
+  const m = url.match(/\/pull\/(\d+)(?:[/?#]|$)/)
+  if (!m) return null
+  const n = parseInt(m[1]!, 10)
+  return Number.isFinite(n) ? n : null
 }
 
 /**
