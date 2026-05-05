@@ -39,20 +39,31 @@ export const mergeReleasePr: PostflightScript = async (ctx) => {
     return
   }
 
+  process.stderr.write(`[kody mergeReleasePr] merging PR #${prNumber} (${prUrl})\n`)
   try {
-    execFileSync("gh", ["pr", "merge", String(prNumber), "--merge"], {
+    const out = execFileSync("gh", ["pr", "merge", String(prNumber), "--merge"], {
       timeout: API_TIMEOUT_MS,
       cwd: ctx.cwd,
       stdio: ["ignore", "pipe", "pipe"],
     })
+    const stdout = out.toString().trim()
+    if (stdout) process.stderr.write(`[kody mergeReleasePr] gh stdout: ${stdout}\n`)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    if (/already merged/i.test(msg)) {
+    // execFileSync attaches stdout/stderr Buffers to the thrown error so we
+    // can surface gh's actual rejection (e.g. "Pull request is not mergeable:
+    // the base branch policy prohibits the merge.") instead of just the
+    // generic spawn message.
+    const e = err as { message?: string; stdout?: Buffer; stderr?: Buffer; status?: number }
+    const stdout = e.stdout?.toString().trim() ?? ""
+    const stderr = e.stderr?.toString().trim() ?? ""
+    const detail = [stderr, stdout].filter(Boolean).join(" | ") || e.message || String(err)
+    process.stderr.write(`[kody mergeReleasePr] gh pr merge failed (exit ${e.status ?? "?"}): ${detail}\n`)
+    if (/already merged/i.test(detail)) {
       ctx.data.action = makeAction("RELEASE_MERGE_COMPLETED", { prUrl, alreadyMerged: true })
       if (state) state.core.lastOutcome = ctx.data.action as Action
       return
     }
-    ctx.data.action = makeAction("RELEASE_MERGE_FAILED", { reason: msg, prUrl })
+    ctx.data.action = makeAction("RELEASE_MERGE_FAILED", { reason: detail, prUrl })
     if (state) state.core.lastOutcome = ctx.data.action as Action
     return
   }

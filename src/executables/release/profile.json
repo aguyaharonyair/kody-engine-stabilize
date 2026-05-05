@@ -54,7 +54,7 @@
       { "script": "startFlow", "with": { "entry": "release-prepare", "target": "issue" } },
 
       { "script": "waitForCi",
-        "with": { "timeoutMinutes": 30, "pollSeconds": 30, "initialWaitSeconds": 15, "maxFixCiAttempts": 0 },
+        "with": { "timeoutMinutes": 60, "pollSeconds": 30, "initialWaitSeconds": 15, "maxFixCiAttempts": 0 },
         "runWhen": { "data.taskState.core.lastOutcome.type": "RELEASE_PREPARE_COMPLETED" } },
 
       { "script": "mergeReleasePr",
@@ -67,7 +67,7 @@
         "runWhen": { "data.taskState.core.lastOutcome.type": "RELEASE_PUBLISH_COMPLETED" } },
 
       { "script": "waitForCi",
-        "with": { "timeoutMinutes": 30, "pollSeconds": 30, "initialWaitSeconds": 15, "maxFixCiAttempts": 3 },
+        "with": { "timeoutMinutes": 60, "pollSeconds": 30, "initialWaitSeconds": 15, "maxFixCiAttempts": 3 },
         "runWhen": { "data.taskState.core.lastOutcome.type": ["RELEASE_DEPLOY_COMPLETED", "FIX_CI_COMPLETED"] } },
 
       { "script": "dispatch", "with": { "next": "fix-ci", "target": "pr" },

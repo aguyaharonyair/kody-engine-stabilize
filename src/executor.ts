@@ -188,8 +188,24 @@ export async function runExecutable(profileName: string, input: ExecutorInput): 
     // When adding a new postflight, default to "safe to run on failure"
     // unless its side effects would corrupt state.
     for (const entry of profile.scripts.postflight) {
-      if (!shouldRun(entry, ctx)) continue
-      const label = entry.script ?? entry.shell ?? "<unknown>"
+      const entryLabel = entry.script ?? entry.shell ?? "<unknown>"
+      if (!shouldRun(entry, ctx)) {
+        // Make the transition table observable. Orchestrator profiles use
+        // runWhen to declare conditional steps; without this log a stalled
+        // release looks identical to a successful one — every script
+        // silently skipped, no clue which condition didn't match.
+        if (entry.runWhen) {
+          const reasons: string[] = []
+          for (const [key, want] of Object.entries(entry.runWhen)) {
+            const actual = resolveDottedPath(ctx, key)
+            const wanted = Array.isArray(want) ? want.join("|") : String(want)
+            reasons.push(`${key}=${JSON.stringify(actual)} (need ${wanted})`)
+          }
+          process.stderr.write(`[kody postflight] skip ${entryLabel}: ${reasons.join("; ")}\n`)
+        }
+        continue
+      }
+      const label = entryLabel
       try {
         if (entry.shell) {
           await runShellEntry(entry, ctx, profile)
