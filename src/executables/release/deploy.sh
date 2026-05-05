@@ -91,8 +91,11 @@ open_deploy_pr() {
   if [[ -n "$existing" ]]; then
     echo "  reusing existing deploy PR: ${existing}" >&2
     pr_url="$existing"
-    if ! printf '%s' "$body" | gh pr edit "$pr_url" --body-file - >/dev/null 2>&1; then
-      echo "[deploy] WARN: failed to refresh deploy PR body" >&2
+    local edit_err
+    if ! edit_err=$(printf '%s' "$body" | gh pr edit "$pr_url" --body-file - 2>&1); then
+      echo "[deploy] WARN: failed to refresh deploy PR body for ${pr_url}: ${edit_err}" >&2
+    else
+      echo "  refreshed deploy PR body" >&2
     fi
   else
     if ! pr_url=$(printf '%s' "$body" | gh pr create --head "$default_branch" --base "$release_branch" --title "deploy: ${default_branch} → ${release_branch} (v${new_version})" --body-file -); then
