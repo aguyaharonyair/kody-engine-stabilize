@@ -107,12 +107,18 @@ generate_changelog() {
 
 format_changelog() {
   local new_version="$1"
-  local date_str
+  local date_str raw
   date_str=$(date -u +%Y-%m-%d)
-  python3 - "$new_version" "$date_str" <<'PY'
-import sys, re
-new_version, date_str = sys.argv[1], sys.argv[2]
-raw = sys.stdin.read()
+  # Capture stdin BEFORE invoking python — the python heredoc below
+  # redirects sys.stdin to the heredoc text itself, so we can't rely on
+  # `sys.stdin.read()` to see the piped `subject||sha` lines. Pass the
+  # raw log through an env var instead.
+  raw=$(cat)
+  RAW_CHANGELOG="$raw" NEW_VER="$new_version" DATE_STR="$date_str" python3 - <<'PY'
+import os, re, sys
+new_version = os.environ["NEW_VER"]
+date_str = os.environ["DATE_STR"]
+raw = os.environ.get("RAW_CHANGELOG", "")
 buckets = {k: [] for k in ("feat", "fix", "perf", "refactor", "docs", "chore", "other")}
 for line in raw.splitlines():
     line = line.strip()
