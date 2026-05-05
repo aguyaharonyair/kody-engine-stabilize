@@ -54,6 +54,57 @@ read_version() {
 version=$(read_version "$default_branch")
 echo "→ release deploy: v${version}"
 
+# Read the CHANGELOG section for $version from the integration branch
+# (where release-prepare just committed it). Handles both header shapes
+# observed in the wild: `## [0.25.0] - 2026-04-15` and `## 0.22.0 (...)`.
+# Prints the body lines (without the matched header). Empty stdout =
+# fall back to the minimal PR body — never break the release.
+read_changelog_section() {
+  local branch="$1" ver="$2" raw=""
+  if ! raw=$(git show "origin/${branch}:CHANGELOG.md" 2>/dev/null); then
+    return 0
+  fi
+  printf '%s' "$raw" | awk -v ver="$ver" '
+    BEGIN { capture = 0 }
+    # Match: "## [VER] ..." or "## VER ..." (VER as the first word/bracket).
+    /^##[[:space:]]/ {
+      if (capture) { exit }
+      header = $0
+      sub(/^##[[:space:]]+/, "", header)
+      sub(/^\[/, "", header); sub(/\].*/, "", header)
+      sub(/[[:space:]].*/, "", header)
+      sub(/[(].*/, "", header)
+      if (header == ver) { capture = 1; next }
+    }
+    capture { print }
+  ' | awk '
+    # Trim leading and trailing blank lines from the captured block.
+    NF { if (!started) started = 1; out[++n] = $0; last = n; next }
+    started { out[++n] = $0 }
+    END { for (i = 1; i <= last; i++) print out[i] }
+  '
+}
+
+changelog_section=$(read_changelog_section "$default_branch" "$version" || true)
+if [[ -z "$changelog_section" ]]; then
+  echo "  no CHANGELOG section for v${version} on origin/${default_branch} — using minimal PR body"
+fi
+
+# Build the kody-managed body block. A marker pair lets us update the
+# section idempotently on re-runs without clobbering anything a human
+# pasted outside the markers.
+build_pr_body() {
+  local tracking_line="$1"
+  printf 'Automated deploy PR opened by kody — promotes `%s` to `%s` for release **v%s**.\n\n' \
+    "$default_branch" "$release_branch" "$version"
+  if [[ -n "$changelog_section" ]]; then
+    printf '<!-- kody-changelog-start -->\n## What'\''s changing in v%s\n\n%s\n<!-- kody-changelog-end -->\n\n' \
+      "$version" "$changelog_section"
+  fi
+  printf 'Merge this PR to deploy v%s to `%s`.%s\n' \
+    "$version" "$release_branch" "$tracking_line"
+}
+
 # Single-branch repos: nothing to deploy.
 if [[ -z "$release_branch" || "$release_branch" == "$default_branch" ]]; then
   echo "KODY_REASON=no releaseBranch configured (or equals defaultBranch) — nothing to deploy"
@@ -78,20 +129,25 @@ existing=$(gh pr list --head "$default_branch" --base "$release_branch" --state 
 # reuse-existing-PR path.
 issue_arg="${KODY_ARG_ISSUE:-}"
 
+# Same Tracking-Issue marker as release-prepare — non-closing reference
+# so the originating release issue stays open through the deploy step
+# while the Kody Dashboard can still link this PR to the task for preview.
+tracking_line=""
+if [[ "$issue_arg" =~ ^[0-9]+$ && "$issue_arg" != "0" ]]; then
+  tracking_line=$'\n\nTracking-Issue: #'"${issue_arg}"
+fi
+body=$(build_pr_body "$tracking_line")
+
 if [[ -n "$existing" ]]; then
   echo "  reusing existing deploy PR: ${existing}"
   pr_url="$existing"
-else
-  # Same Tracking-Issue marker as release-prepare — non-closing reference
-  # so the originating release issue stays open through the deploy step
-  # while the Kody Dashboard can still link this PR to the task for preview.
-  tracking_line=""
-  if [[ "$issue_arg" =~ ^[0-9]+$ && "$issue_arg" != "0" ]]; then
-    tracking_line=$'\n\nTracking-Issue: #'"${issue_arg}"
+  # Refresh the body so re-runs converge on the current changelog. Best-
+  # effort: a failed edit (e.g. permission-denied) shouldn't fail the
+  # release — the PR already exists and its title/branch are unchanged.
+  if ! printf '%s' "$body" | gh pr edit "$pr_url" --body-file - >/dev/null 2>&1; then
+    echo "[kody release-deploy] WARN: failed to refresh deploy PR body" >&2
   fi
-  body="Automated deploy PR opened by kody — promotes \`${default_branch}\` to \`${release_branch}\` for release **v${version}**.
-
-Merge this PR to deploy v${version} to \`${release_branch}\`.${tracking_line}"
+else
   if ! pr_url=$(printf '%s' "$body" | gh pr create --head "$default_branch" --base "$release_branch" --title "deploy: ${default_branch} → ${release_branch} (v${version})" --body-file -); then
     echo "KODY_REASON=release deploy: gh pr create failed"
     echo "KODY_SKIP_AGENT=true"
