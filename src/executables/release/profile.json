@@ -64,7 +64,7 @@
       },
       { "script": "loadIssueContext" },
       { "script": "loadTaskState" },
-      { "shell": "release.sh" },
+      { "shell": "release.sh", "timeoutSec": 5400 },
       { "script": "skipAgent" }
     ],
     "postflight": [
