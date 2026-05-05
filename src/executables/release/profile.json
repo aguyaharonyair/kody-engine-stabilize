@@ -53,8 +53,12 @@
     "postflight": [
       { "script": "startFlow", "with": { "entry": "release-prepare", "target": "issue" } },
 
-      { "script": "mergeReleasePr",
+      { "script": "waitForCi",
+        "with": { "timeoutMinutes": 30, "pollSeconds": 30, "initialWaitSeconds": 15, "maxFixCiAttempts": 0 },
         "runWhen": { "data.taskState.core.lastOutcome.type": "RELEASE_PREPARE_COMPLETED" } },
+
+      { "script": "mergeReleasePr",
+        "runWhen": { "data.action.type": "CI_PASSED" } },
 
       { "script": "dispatch", "with": { "next": "release-publish", "target": "issue" },
         "runWhen": { "data.taskState.core.lastOutcome.type": "RELEASE_MERGE_COMPLETED" } },
