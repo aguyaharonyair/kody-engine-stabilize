@@ -28,10 +28,7 @@ export function findPreviewDeploymentUrl(prNumber: number, cwd?: string): string
   const sha = getPrHeadSha(prNumber, cwd)
   if (!sha) return null
 
-  const raw = safeGh(
-    ["api", `repos/{owner}/{repo}/deployments?sha=${sha}&environment=Preview&per_page=10`],
-    cwd,
-  )
+  const raw = safeGh(["api", `repos/{owner}/{repo}/deployments?sha=${sha}&environment=Preview&per_page=10`], cwd)
   if (!raw) return null
 
   let deployments: DeploymentRef[]
@@ -57,10 +54,7 @@ function getPrHeadSha(prNumber: number, cwd?: string): string | null {
 }
 
 function latestSuccessUrl(deploymentId: number, cwd?: string): string | null {
-  const raw = safeGh(
-    ["api", `repos/{owner}/{repo}/deployments/${deploymentId}/statuses?per_page=10`],
-    cwd,
-  )
+  const raw = safeGh(["api", `repos/{owner}/{repo}/deployments/${deploymentId}/statuses?per_page=10`], cwd)
   if (!raw) return null
 
   let statuses: DeploymentStatus[]
