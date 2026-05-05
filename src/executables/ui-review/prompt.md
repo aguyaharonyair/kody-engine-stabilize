@@ -14,13 +14,15 @@ Base: {{pr.baseRefName}} ← Head: {{pr.headRefName}}
 
 `{{previewUrl}}` (resolved from: {{previewUrlSource}})
 
-Before you do anything else, run:
+Before you do anything else, navigate to the preview with Playwright MCP:
 
-```bash
-curl -sS -o /dev/null -w "%{http_code}\n" --max-time 10 {{previewUrl}}
+```
+mcp__playwright__browser_navigate({ url: "{{previewUrl}}" })
 ```
 
-If the response is not 2xx or 3xx, the preview is unreachable. In that case, SKIP browsing, note the failure in your review under "Browsing", and base your verdict on the diff alone.
+Playwright is the real browser the rest of this review uses, so it's the authoritative reachability check — a page can return a fast HTTP status and still be broken, or load slowly and still be fine. Only the browser knows.
+
+If `browser_navigate` errors out (timeout, DNS, connection refused, navigation aborted), the preview is unreachable. In that case, SKIP further browsing, note the failure in your review under "Browsing", and base your verdict on the diff alone. If the page navigates and renders (even to an error/login page), the preview is reachable — proceed with the steps below.
 
 # QA context (auto-discovered from the repo)
 
