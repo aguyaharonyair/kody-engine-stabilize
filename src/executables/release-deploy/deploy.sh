@@ -183,9 +183,16 @@ echo "RELEASE_DEPLOY_PR=${pr_url}"
 echo "KODY_PR_URL=${pr_url}"
 
 # Optional post-deploy notification (e.g. Slack ping that a deploy PR is up).
+# Substituted placeholders in the configured command:
+#   $VERSION         — release version (e.g. 0.25.4)
+#   $DEPLOY_PR_URL   — URL of the deploy PR just opened/reused
+# The notifyCommand can use $DEPLOY_PR_URL to pull real content (e.g.
+# `gh pr view $DEPLOY_PR_URL --json body --jq .body`) instead of
+# rendering a hardcoded one-liner.
 notify_status="skipped"
 if [[ -n "$notify_cmd" ]]; then
   cmd="${notify_cmd//\$VERSION/$version}"
+  cmd="${cmd//\$DEPLOY_PR_URL/$pr_url}"
   echo "  notify: ${cmd}"
   if timeout "${timeout_s}" bash -c "$cmd"; then
     notify_status="ok"
