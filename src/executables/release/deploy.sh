@@ -91,11 +91,23 @@ open_deploy_pr() {
   if [[ -n "$existing" ]]; then
     echo "  reusing existing deploy PR: ${existing}" >&2
     pr_url="$existing"
+    # Refresh body via REST API instead of `gh pr edit` — gh's edit path
+    # uses GraphQL which requires read:org scope on KODY_TOKEN. REST PATCH
+    # works with plain `repo` scope.
+    local pr_num="${pr_url##*/}"
+    local owner="${KODY_CFG_GITHUB_OWNER:-}"
+    local repo="${KODY_CFG_GITHUB_REPO:-}"
+    if [[ -z "$owner" || -z "$repo" ]]; then
+      # Fall back to extracting from the URL if config missing.
+      local stripped="${pr_url#https://github.com/}"
+      owner="${stripped%%/*}"
+      repo=$(echo "$stripped" | cut -d/ -f2)
+    fi
     local edit_err
-    if ! edit_err=$(printf '%s' "$body" | gh pr edit "$pr_url" --body-file - 2>&1); then
+    if ! edit_err=$(gh api --method PATCH "repos/${owner}/${repo}/pulls/${pr_num}" -f body="$body" 2>&1 >/dev/null); then
       echo "[deploy] WARN: failed to refresh deploy PR body for ${pr_url}: ${edit_err}" >&2
     else
-      echo "  refreshed deploy PR body" >&2
+      echo "  refreshed deploy PR body via REST" >&2
     fi
   else
     if ! pr_url=$(printf '%s' "$body" | gh pr create --head "$default_branch" --base "$release_branch" --title "deploy: ${default_branch} → ${release_branch} (v${new_version})" --body-file -); then
