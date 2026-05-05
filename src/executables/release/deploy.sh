@@ -104,10 +104,13 @@ open_deploy_pr() {
       repo=$(echo "$stripped" | cut -d/ -f2)
     fi
     local edit_err
-    if ! edit_err=$(gh api --method PATCH "repos/${owner}/${repo}/pulls/${pr_num}" -f body="$body" 2>&1 >/dev/null); then
-      echo "[deploy] WARN: failed to refresh deploy PR body for ${pr_url}: ${edit_err}" >&2
+    local refreshed_title="deploy: ${default_branch} → ${release_branch} (v${new_version})"
+    if ! edit_err=$(gh api --method PATCH "repos/${owner}/${repo}/pulls/${pr_num}" \
+        -f title="$refreshed_title" \
+        -f body="$body" 2>&1 >/dev/null); then
+      echo "[deploy] WARN: failed to refresh deploy PR title+body for ${pr_url}: ${edit_err}" >&2
     else
-      echo "  refreshed deploy PR body via REST" >&2
+      echo "  refreshed deploy PR title + body via REST" >&2
     fi
   else
     if ! pr_url=$(printf '%s' "$body" | gh pr create --head "$default_branch" --base "$release_branch" --title "deploy: ${default_branch} → ${release_branch} (v${new_version})" --body-file -); then
