@@ -66,6 +66,11 @@ export async function runInteractiveMode(opts: InteractiveModeOptions): Promise<
     idleExitMs,
     hardCapMs,
   })
+  // Push the events file to origin RIGHT NOW so the dashboard's git-poll
+  // sees chat.ready without waiting for the first turn. Without this, an
+  // interactive session with no seed user message stays invisible until
+  // the user sends — defeating the "warm up button → input enables" UX.
+  if (!opts.skipGit) commitTurn(opts.cwd, opts.sessionId, opts.verbose ?? false)
 
   // Watermark = next index to look at. Start by replying to anything already
   // in the file (the dashboard typically seeds an initial user turn before
