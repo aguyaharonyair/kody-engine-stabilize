@@ -89,10 +89,15 @@ export async function runInteractiveMode(opts: InteractiveModeOptions): Promise<
       })
       if (result.kind === "idle-timeout") {
         await emitExit(opts, "idle-timeout", turnsCompleted)
+        // Push the exit event so dashboards relying on the git-fallback
+        // path see the lifecycle end (HttpSink delivers it real-time, but
+        // a freshly-loading client needs the durable record too).
+        if (!opts.skipGit) commitTurn(opts.cwd, opts.sessionId, opts.verbose ?? false)
         return { exitCode: 0, reason: "idle-timeout", turnsCompleted }
       }
       if (result.kind === "deadline") {
         await emitExit(opts, "deadline", turnsCompleted)
+        if (!opts.skipGit) commitTurn(opts.cwd, opts.sessionId, opts.verbose ?? false)
         return { exitCode: 0, reason: "deadline", turnsCompleted }
       }
       // New message arrived — fall through and process it via runChatTurn,
@@ -116,6 +121,7 @@ export async function runInteractiveMode(opts: InteractiveModeOptions): Promise<
       const msg = err instanceof Error ? err.message : String(err)
       await emit(opts.sink, "chat.error", opts.sessionId, `loop-${turnsCompleted}`, { error: msg })
       await emitExit(opts, "fatal", turnsCompleted)
+      if (!opts.skipGit) commitTurn(opts.cwd, opts.sessionId, opts.verbose ?? false)
       return { exitCode: 99, reason: "fatal", turnsCompleted }
     }
 
