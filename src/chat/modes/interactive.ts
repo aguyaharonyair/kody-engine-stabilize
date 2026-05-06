@@ -60,12 +60,22 @@ export async function runInteractiveMode(opts: InteractiveModeOptions): Promise<
   const startedAt = Date.now()
   const deadlineMs = startedAt + hardCapMs
 
-  process.stdout.write(`→ kody:chat:interactive: emitting chat.ready (idleExitMs=${idleExitMs}, hardCapMs=${hardCapMs})\n`)
+  // GitHub Actions injects these automatically — no setup in kody.yml.
+  // The dashboard uses runUrl to deep-link the booting banner straight to
+  // this specific run instead of the workflow's run list.
+  const runId = process.env.GITHUB_RUN_ID
+  const repository = process.env.GITHUB_REPOSITORY
+  const serverUrl = process.env.GITHUB_SERVER_URL ?? "https://github.com"
+  const runUrl = runId && repository ? `${serverUrl}/${repository}/actions/runs/${runId}` : undefined
+
+  process.stdout.write(`→ kody:chat:interactive: emitting chat.ready (idleExitMs=${idleExitMs}, hardCapMs=${hardCapMs}, runUrl=${runUrl ?? "n/a"})\n`)
   await emit(opts.sink, "chat.ready", opts.sessionId, "ready", {
     sessionId: opts.sessionId,
     startedAt: new Date(startedAt).toISOString(),
     idleExitMs,
     hardCapMs,
+    ...(runId ? { runId } : {}),
+    ...(runUrl ? { runUrl } : {}),
   })
   // Push the events file to origin RIGHT NOW so the dashboard's git-poll
   // sees chat.ready without waiting for the first turn. Without this, an
