@@ -37,7 +37,12 @@ export type InboxResult =
   | { kind: "idle-timeout" }
   | { kind: "deadline" }
 
-const DEFAULT_POLL_MS = 30_000
+// 3s — keeps runner-side latency to ~1.5s avg before a new user message
+// is picked up. `git fetch + merge --ff-only` against an idle remote takes
+// ~200ms on GHA runners, so 3s polls don't pile up. Combined with the
+// dashboard's 2s event poll, total user-visible roundtrip drops from
+// ~35s to ~8-12s for a fast-reply turn.
+const DEFAULT_POLL_MS = 3_000
 
 /**
  * Wait for the next new user message in the session file, or exit on idle/deadline.

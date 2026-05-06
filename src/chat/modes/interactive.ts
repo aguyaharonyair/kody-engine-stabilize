@@ -28,7 +28,7 @@ import { readSession, sessionFilePath } from "../session.js"
 
 const DEFAULT_IDLE_EXIT_MS = 5 * 60_000 // 5 minutes
 const DEFAULT_HARD_CAP_MS = 30 * 60_000 // 30 minutes (spike cap; raise to 6h after validation)
-const DEFAULT_POLL_MS = 30_000
+const DEFAULT_POLL_MS = 3_000
 
 export interface InteractiveModeOptions {
   sessionId: string
