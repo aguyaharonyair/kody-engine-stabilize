@@ -4,12 +4,19 @@
  * collected ctx.data state.
  */
 
-import type { PostflightScript } from "../executables/types.js"
+import type { Context, PostflightScript } from "../executables/types.js"
 import {
   postIssueComment as ghPostIssueComment,
   postPrReviewComment as ghPostPrReviewComment,
   truncate,
 } from "../issue.js"
+import { setKodyLabel } from "../lifecycleLabels.js"
+
+const FAILED_LABEL_SPEC = {
+  label: "kody:failed",
+  color: "e11d21",
+  description: "kody: flow failed",
+}
 
 export const postIssueComment: PostflightScript = async (ctx) => {
   // Preflight early-exit path: whoever set output.exitCode already did the user-facing comment.
@@ -27,6 +34,7 @@ export const postIssueComment: PostflightScript = async (ctx) => {
   if (!commitResult?.committed && !hasCommits) {
     const reason = "no changes to commit"
     postWith(targetType, targetNumber, `⚠️ kody FAILED: ${reason}`, ctx.cwd)
+    markRunFailed(ctx)
     ctx.output.exitCode = 3
     ctx.output.reason = reason
     return
@@ -34,6 +42,7 @@ export const postIssueComment: PostflightScript = async (ctx) => {
 
   if (ctx.output.exitCode === 4 && ctx.data.prCrashReason) {
     postWith(targetType, targetNumber, `⚠️ kody FAILED: ${truncate(ctx.data.prCrashReason as string, 1500)}`, ctx.cwd)
+    markRunFailed(ctx)
     ctx.output.reason = ctx.data.prCrashReason as string
     return
   }
@@ -68,8 +77,28 @@ export const postIssueComment: PostflightScript = async (ctx) => {
   const misses = (ctx.data.coverageMisses as unknown[] | undefined) ?? []
   if (!agentDone || misses.length > 0) exitCode = 1
   else if (!verifyOk) exitCode = 2
+  if (exitCode !== 0) markRunFailed(ctx)
   ctx.output.exitCode = exitCode
   ctx.output.reason = failureReason || undefined
+}
+
+/**
+ * Best-effort lifecycle cleanup: flip `kody:running` → `kody:failed` on the
+ * issue (and PR, when known) whenever this script is the terminus on a
+ * failure path. The outer orchestrator's `finishFlow` handles labels on the
+ * success path; without this, a failed primitive run leaves the issue
+ * stamped `kody:running`, which dashboards interpret as "still building".
+ */
+function markRunFailed(ctx: Context): void {
+  const issueNumber = ctx.args.issue as number | undefined
+  if (typeof issueNumber === "number" && Number.isFinite(issueNumber)) {
+    setKodyLabel(issueNumber, FAILED_LABEL_SPEC, ctx.cwd)
+  }
+  const targetType = ctx.data.commentTargetType as "issue" | "pr" | undefined
+  const targetNumber = Number(ctx.data.commentTargetNumber ?? 0)
+  if (targetType === "pr" && targetNumber > 0 && targetNumber !== issueNumber) {
+    setKodyLabel(targetNumber, FAILED_LABEL_SPEC, ctx.cwd)
+  }
 }
 
 /**
