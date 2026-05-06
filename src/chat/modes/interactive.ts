@@ -60,6 +60,7 @@ export async function runInteractiveMode(opts: InteractiveModeOptions): Promise<
   const startedAt = Date.now()
   const deadlineMs = startedAt + hardCapMs
 
+  process.stdout.write(`→ kody:chat:interactive: emitting chat.ready (idleExitMs=${idleExitMs}, hardCapMs=${hardCapMs})\n`)
   await emit(opts.sink, "chat.ready", opts.sessionId, "ready", {
     sessionId: opts.sessionId,
     startedAt: new Date(startedAt).toISOString(),
@@ -70,7 +71,11 @@ export async function runInteractiveMode(opts: InteractiveModeOptions): Promise<
   // sees chat.ready without waiting for the first turn. Without this, an
   // interactive session with no seed user message stays invisible until
   // the user sends — defeating the "warm up button → input enables" UX.
-  if (!opts.skipGit) commitTurn(opts.cwd, opts.sessionId, opts.verbose ?? false)
+  if (!opts.skipGit) {
+    process.stdout.write(`→ kody:chat:interactive: committing chat.ready event to git\n`)
+    commitTurn(opts.cwd, opts.sessionId, opts.verbose ?? false)
+    process.stdout.write(`→ kody:chat:interactive: chat.ready committed; entering poll loop\n`)
+  }
 
   // Watermark = next index to look at. Start by replying to anything already
   // in the file (the dashboard typically seeds an initial user turn before

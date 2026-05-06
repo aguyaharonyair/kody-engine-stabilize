@@ -168,11 +168,13 @@ export async function runChat(argv: string[]): Promise<number> {
     }
   }
 
+  process.stdout.write(`→ kody:chat: starting litellm proxy (model=${model.provider}/${model.model})\n`)
   let litellm: Awaited<ReturnType<typeof startLitellmIfNeeded>> = null
   try {
     litellm = await startLitellmIfNeeded(model, cwd)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    process.stderr.write(`→ kody:chat: litellm startup FAILED: ${msg}\n`)
     const sink = buildSink(cwd, sessionId, args.dashboardUrl)
     await sink.emit({
       event: "chat.error",
@@ -182,6 +184,7 @@ export async function runChat(argv: string[]): Promise<number> {
     })
     return 99
   }
+  process.stdout.write(`→ kody:chat: litellm proxy ready (url=${litellm?.url ?? "skipped"})\n`)
 
   const sessionFile = sessionFilePath(cwd, sessionId)
   if (args.initMessage) seedInitialMessage(sessionFile, args.initMessage)
@@ -193,6 +196,9 @@ export async function runChat(argv: string[]): Promise<number> {
   // the long-lived poll loop. Encoding mode in data (not workflow inputs)
   // keeps kody.yml a thin shim — see CLAUDE.md / feedback_thin_yaml.md.
   const meta = readMeta(sessionFile)
+  process.stdout.write(
+    `→ kody:chat: session file=${sessionFile} exists=${fs.existsSync(sessionFile)} meta=${meta ? meta.mode : "none"}\n`,
+  )
 
   try {
     if (meta?.mode === "interactive") {
