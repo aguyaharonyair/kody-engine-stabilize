@@ -84,7 +84,7 @@ function action(type: string, payload: Record<string, unknown> = {}): Action {
 function makeMockEnvironment(
   scripts: Array<{
     exec: string
-    onInvoke?: (state: TaskState) => Action
+    onInvoke?: (state: TaskState) => Action | null
     exitCode?: number
   }>,
 ): {
@@ -105,6 +105,7 @@ function makeMockEnvironment(
     const a = script.onInvoke?.(state)
     if (a) {
       state.core.lastOutcome = a
+      state.core.attempts[name] = (state.core.attempts[name] ?? 0) + 1
       state.executables[name] = { lastAction: a }
       state.history.push({
         timestamp: a.timestamp,
@@ -408,6 +409,7 @@ describe("container: target-aware state reads", () => {
       if (name === "plan") {
         const a = action("PLAN_COMPLETED")
         issueState.core.lastOutcome = a
+        issueState.core.attempts.plan = (issueState.core.attempts.plan ?? 0) + 1
         issueState.executables.plan = { lastAction: a }
         issueState.core.prUrl = "https://github.com/o/r/pull/42"
         return { exitCode: 0 }
@@ -415,6 +417,7 @@ describe("container: target-aware state reads", () => {
       if (name === "review") {
         const a = action("REVIEW_PASS")
         prState.core.lastOutcome = a
+        prState.core.attempts.review = (prState.core.attempts.review ?? 0) + 1
         prState.executables.review = { lastAction: a }
         // issueState.lastOutcome stays at PLAN_COMPLETED — the bug case.
         return { exitCode: 0 }
@@ -461,6 +464,7 @@ describe("container: target-aware state reads", () => {
       if (name === "again") {
         const a = action("RUN_COMPLETED")
         issueState.core.lastOutcome = a
+        issueState.core.attempts.again = (issueState.core.attempts.again ?? 0) + 1
         issueState.executables.again = { lastAction: a }
         return { exitCode: 0 }
       }
@@ -487,6 +491,121 @@ describe("container: target-aware state reads", () => {
     })
 
     expect(result.exitCode).toBe(0)
+  })
+})
+
+describe("container: failure-shape regression suite", () => {
+  // These tests reproduce real production failures observed on A-Guy issue
+  // #1440 and similar runs. Each test exercises a class of bug that the
+  // synthetic happy-path tests above couldn't catch.
+
+  it("synthesizes <EXEC>_FAILED when child exits non-zero without writing a new action", async () => {
+    // Reproduces A-Guy #1440: run's preflight (runFlow) threw
+    // UncommittedChangesError, set skipAgent + exitCode=5, but never called
+    // saveTaskState. The container then re-read state and saw the prior
+    // child's PLAN_COMPLETED still sitting there, routed via wildcard to
+    // abort, and finishFlow's RUN_FAILED runWhen never fired — leaving
+    // intermediate kody:running on the issue.
+    //
+    // The fix: when the post-invoke read returns the SAME lastOutcome as
+    // pre-invoke (child didn't write), synthesize <EXEC>_COMPLETED or
+    // <EXEC>_FAILED from exit code so runWhens can match correctly.
+    const root = makeContainerFixture({
+      containerName: "noop-bail",
+      children: [
+        { exec: "plan", target: "issue", next: { PLAN_COMPLETED: "run", "*": "abort" } },
+        { exec: "run", target: "issue", next: { RUN_COMPLETED: "done", RUN_FAILED: "abort", "*": "abort" } },
+      ],
+    })
+
+    const env = makeMockEnvironment([
+      { exec: "plan", onInvoke: () => action("PLAN_COMPLETED") },
+      // run "bails" — exit non-zero but writes nothing to state.
+      { exec: "run", onInvoke: () => null, exitCode: 5 },
+    ])
+
+    process.chdir(root)
+    const result = await runExecutable("noop-bail", {
+      cliArgs: { issue: 7 },
+      cwd: root,
+      skipConfig: true,
+      __runChild: env.runChild,
+      __readTaskState: env.readTaskState,
+    })
+
+    expect(result.exitCode).toBe(1)
+    // BEFORE THE FIX: result.reason matches /PLAN_COMPLETED/ (stale state)
+    // AFTER THE FIX: result.reason matches /RUN_FAILED/ (synthesized)
+    expect(result.reason).toMatch(/RUN_FAILED/)
+    expect(result.reason).not.toMatch(/PLAN_COMPLETED/)
+  })
+
+  it("synthesizes <EXEC>_COMPLETED when child exits 0 without writing a new action", async () => {
+    // Mirror of the above for the success path. If a child legitimately
+    // exits 0 without saveTaskState (e.g. a no-op executable), the
+    // container should synthesize <EXEC>_COMPLETED so routing keys match.
+    const root = makeContainerFixture({
+      containerName: "noop-ok",
+      children: [
+        { exec: "noop", target: "issue", next: { NOOP_COMPLETED: "done", "*": "abort" } },
+      ],
+    })
+
+    const env = makeMockEnvironment([{ exec: "noop", onInvoke: () => null, exitCode: 0 }])
+
+    process.chdir(root)
+    const result = await runExecutable("noop-ok", {
+      cliArgs: { issue: 7 },
+      cwd: root,
+      skipConfig: true,
+      __runChild: env.runChild,
+      __readTaskState: env.readTaskState,
+    })
+
+    expect(result.exitCode).toBe(0)
+  })
+
+  it("ctx.data.taskState.core.lastOutcome reflects synthesized action so finishFlow runWhens can match", async () => {
+    // The whole point of synthesizing the action: postflight scripts (like
+    // finishFlow) read core.lastOutcome.type via runWhen and need to see
+    // the child's actual failure, not the prior child's success.
+    //
+    // We can't observe ctx.data directly from runExecutable, but we can
+    // verify via the routing decision in the abort reason — if the abort
+    // route was taken because of RUN_FAILED, the runWhen system would also
+    // see RUN_FAILED.
+    const root = makeContainerFixture({
+      containerName: "lastoutcome-check",
+      children: [
+        { exec: "plan", target: "issue", next: { PLAN_COMPLETED: "run", "*": "abort" } },
+        // Only RUN_FAILED routes to abort. PLAN_COMPLETED should NOT match
+        // because plan already succeeded. If the container leaks the prior
+        // PLAN_COMPLETED into run's outcome, this routing fails silently.
+        { exec: "run", target: "issue", next: { RUN_FAILED: "abort", RUN_COMPLETED: "done" } },
+      ],
+    })
+
+    const env = makeMockEnvironment([
+      { exec: "plan", onInvoke: () => action("PLAN_COMPLETED") },
+      { exec: "run", onInvoke: () => null, exitCode: 1 }, // write nothing, fail
+    ])
+
+    process.chdir(root)
+    const result = await runExecutable("lastoutcome-check", {
+      cliArgs: { issue: 7 },
+      cwd: root,
+      skipConfig: true,
+      __runChild: env.runChild,
+      __readTaskState: env.readTaskState,
+    })
+
+    // run had no "*" route, so the only way the container exits non-zero
+    // here is via RUN_FAILED → abort. If the container synthesizes correctly,
+    // the abort reason cites RUN_FAILED. If it doesn't, the container
+    // crashes with "no route for action PLAN_COMPLETED from child run".
+    expect(result.exitCode).toBe(1)
+    expect(result.reason).toMatch(/RUN_FAILED/)
+    expect(result.reason).not.toMatch(/no route for action/)
   })
 })
 

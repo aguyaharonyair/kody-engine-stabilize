@@ -7,7 +7,7 @@
  * it was handed and the script catalog.
  */
 
-import { spawn } from "node:child_process"
+import { execFileSync, spawn } from "node:child_process"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import type { AgentResult } from "./agent.js"
@@ -604,6 +604,20 @@ async function runContainerLoop(profile: Profile, ctx: Context, input: ExecutorI
     const child = children[currentIdx]!
     process.stderr.write(`[kody container] step ${iteration}: invoking ${child.exec}\n`)
 
+    // Working-tree reset between children. Each child is built around the
+    // assumption it owns a clean tree (legacy orchestrator gave each child
+    // a fresh `actions/checkout`). When children share one process, an
+    // earlier child's side effects (engine cache writes, generated files,
+    // .kody/ artifacts) can leave tracked-file modifications behind that
+    // make the next child's runFlow throw UncommittedChangesError.
+    // Surfaced on A-Guy issue #1440: plan succeeded, run's preflight bailed
+    // because the tree was dirty — we don't know exactly what dirtied it,
+    // but a hard reset is a deterministic recovery. Untracked files are
+    // left alone (UncommittedChangesError uses --untracked-files=no, so
+    // they don't trigger the gate; preserving them keeps node_modules,
+    // pip caches, and similar resident.) Best-effort: failures don't abort.
+    resetWorkingTree(input.cwd)
+
     // Idempotency: if state already shows a *_COMPLETED action for this child,
     // skip the invocation and use the stored outcome to route. Lets a
     // re-invoked container resume from where the prior run left off without
@@ -669,11 +683,56 @@ async function runContainerLoop(profile: Profile, ctx: Context, input: ExecutorI
       // Reload the freshly-written state to discover the action this child
       // emitted. saveTaskState (the standard postflight) is the canonical
       // writer; readTaskState reads the same comment back.
+      //
+      // Detect "child wrote no new action" by comparing the per-child
+      // attempts counter — `reduce()` (state.ts) bumps state.core.attempts
+      // on every saveTaskState, so a fresh write is always observable as
+      // an increment. Timestamp comparison is unreliable (collisions in
+      // same-ms tests, and clocks aren't monotonic anyway). Reference
+      // comparison fails across deserialized state reads.
+      //
+      // When the child bailed before saveTaskState (e.g. runFlow's
+      // UncommittedChangesError path on A-Guy issue #1440), the counter
+      // is unchanged and we synthesize <EXEC>_COMPLETED|FAILED from the
+      // exit code so finishFlow's runWhens can match the actual outcome
+      // instead of leaking the prior child's action.
+      const priorAttempts = priorState.core?.attempts?.[child.exec] ?? 0
       const next = readContainerState(ctx, child, reader)
       if (next.core?.prUrl) knownPrUrl = next.core.prUrl
+      const nextAttempts = next.core?.attempts?.[child.exec] ?? 0
+      const nextChildAction = next.executables?.[child.exec]?.lastAction
+      const childWrote = nextAttempts > priorAttempts && nextChildAction != null
+      if (childWrote && nextChildAction) {
+        actionType = nextChildAction.type
+      } else {
+        const childTag = child.exec.toUpperCase().replace(/-/g, "_")
+        actionType = childOut.exitCode === 0 ? `${childTag}_COMPLETED` : `${childTag}_FAILED`
+        // Mirror the synthesized action onto core.lastOutcome so postflight
+        // runWhens (which read core.lastOutcome.type) see it consistently
+        // with the routing decision.
+        const synthetic: Action = {
+          type: actionType,
+          payload: {
+            synthesized: true,
+            child: child.exec,
+            exitCode: childOut.exitCode,
+            reason: childOut.reason,
+          },
+          timestamp: new Date().toISOString(),
+        }
+        if (!next.core) {
+          next.core = {
+            phase: "idle",
+            status: "pending",
+            currentExecutable: null,
+            lastOutcome: synthetic,
+            attempts: {},
+          }
+        } else {
+          next.core.lastOutcome = synthetic
+        }
+      }
       ctx.data.taskState = next
-      const actionFromState = next.core?.lastOutcome?.type
-      actionType = actionFromState ?? (childOut.exitCode === 0 ? "RUN_COMPLETED" : "RUN_FAILED")
     }
 
     // Route based on action type. Exact match → wildcard "*" → abort.
@@ -707,6 +766,25 @@ async function runContainerLoop(profile: Profile, ctx: Context, input: ExecutorI
       return
     }
     currentIdx = nextIdx
+  }
+}
+
+/**
+ * Discard tracked-file modifications in `cwd` so the next container child
+ * sees a clean tree. Best-effort: any error (no git repo, detached HEAD,
+ * shallow clone weirdness) is logged and swallowed — this is a recovery
+ * tool, not a gate.
+ */
+function resetWorkingTree(cwd: string): void {
+  try {
+    execFileSync("git", ["reset", "--hard", "HEAD"], {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30_000,
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    process.stderr.write(`[kody container] working-tree reset skipped: ${msg}\n`)
   }
 }
 
