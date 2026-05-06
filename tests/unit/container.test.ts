@@ -390,6 +390,106 @@ describe("container: PR target resolution", () => {
   })
 })
 
+describe("container: target-aware state reads", () => {
+  // Regression: live-test on issue 3175 surfaced that readContainerState was
+  // hard-wired to read from the issue thread, ignoring child.target. After a
+  // child with target:"pr" wrote REVIEW_PASS to the PR's state comment, the
+  // container re-read from the issue and saw the *prior* RUN_COMPLETED still
+  // sitting there, then routed via the wildcard fallback to abort.
+
+  it("reads from PR after a target:'pr' child finishes", async () => {
+    // Two separate state buckets keyed by target. Without the fix the
+    // container reads issueState.lastOutcome (PLAN_COMPLETED) instead of
+    // prState.lastOutcome (REVIEW_PASS) and aborts via the "*" route.
+    const issueState = emptyState()
+    const prState = emptyState()
+
+    const runChild: NonNullable<ExecutorInput["__runChild"]> = async (name): Promise<ExecutorOutput> => {
+      if (name === "plan") {
+        const a = action("PLAN_COMPLETED")
+        issueState.core.lastOutcome = a
+        issueState.executables.plan = { lastAction: a }
+        issueState.core.prUrl = "https://github.com/o/r/pull/42"
+        return { exitCode: 0 }
+      }
+      if (name === "review") {
+        const a = action("REVIEW_PASS")
+        prState.core.lastOutcome = a
+        prState.executables.review = { lastAction: a }
+        // issueState.lastOutcome stays at PLAN_COMPLETED — the bug case.
+        return { exitCode: 0 }
+      }
+      return { exitCode: 99 }
+    }
+
+    const readTaskState: NonNullable<ExecutorInput["__readTaskState"]> = (target) => {
+      const src = target === "pr" ? prState : issueState
+      return JSON.parse(JSON.stringify(src)) as TaskState
+    }
+
+    const root = makeContainerFixture({
+      containerName: "tgt-pr",
+      children: [
+        { exec: "plan", target: "issue", next: { PLAN_COMPLETED: "review", "*": "abort" } },
+        { exec: "review", target: "pr", next: { REVIEW_PASS: "done", "*": "abort" } },
+      ],
+    })
+
+    process.chdir(root)
+    const result = await runExecutable("tgt-pr", {
+      cliArgs: { issue: 7 },
+      cwd: root,
+      skipConfig: true,
+      __runChild: runChild,
+      __readTaskState: readTaskState,
+    })
+
+    expect(result.exitCode).toBe(0)
+  })
+
+  it("falls back to the issue thread for a target:'issue' child", async () => {
+    // Mirror of above: a target:"issue" child must NOT be routed via the
+    // PR thread even when prUrl is set, otherwise a fix→re-run loop would
+    // misroute by reading the PR thread's stale review state.
+    const issueState = emptyState()
+    const prState = emptyState()
+    issueState.core.prUrl = "https://github.com/o/r/pull/42"
+    // Seed the PR thread with a value that would mis-route if read.
+    prState.core.lastOutcome = action("REVIEW_PASS")
+
+    const runChild: NonNullable<ExecutorInput["__runChild"]> = async (name): Promise<ExecutorOutput> => {
+      if (name === "again") {
+        const a = action("RUN_COMPLETED")
+        issueState.core.lastOutcome = a
+        issueState.executables.again = { lastAction: a }
+        return { exitCode: 0 }
+      }
+      return { exitCode: 99 }
+    }
+
+    const readTaskState: NonNullable<ExecutorInput["__readTaskState"]> = (target) => {
+      const src = target === "pr" ? prState : issueState
+      return JSON.parse(JSON.stringify(src)) as TaskState
+    }
+
+    const root = makeContainerFixture({
+      containerName: "tgt-issue",
+      children: [{ exec: "again", target: "issue", next: { RUN_COMPLETED: "done", "*": "abort" } }],
+    })
+
+    process.chdir(root)
+    const result = await runExecutable("tgt-issue", {
+      cliArgs: { issue: 7 },
+      cwd: root,
+      skipConfig: true,
+      __runChild: runChild,
+      __readTaskState: readTaskState,
+    })
+
+    expect(result.exitCode).toBe(0)
+  })
+})
+
 describe("container: iteration cap", () => {
   it("aborts after 50 iterations on a routing loop", async () => {
     const root = makeContainerFixture({

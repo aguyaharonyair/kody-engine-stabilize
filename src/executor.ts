@@ -585,6 +585,11 @@ async function runContainerLoop(profile: Profile, ctx: Context, input: ExecutorI
   const issueNumber = ctx.args.issue as number | undefined
   let currentIdx = 0
   let iteration = 0
+  // prUrl is written by the run child to the issue thread, but later
+  // children read state from the PR thread (target-aware). Track it on
+  // the loop instead of re-reading from priorState, so once seen it
+  // persists across PR-thread reads that don't carry it.
+  let knownPrUrl: string | undefined
 
   while (currentIdx >= 0 && currentIdx < children.length) {
     iteration++
@@ -604,6 +609,7 @@ async function runContainerLoop(profile: Profile, ctx: Context, input: ExecutorI
     // re-invoked container resume from where the prior run left off without
     // re-doing committed work (e.g. a plan that already produced an artifact).
     const priorState = readContainerState(ctx, child, reader)
+    if (priorState.core?.prUrl) knownPrUrl = priorState.core.prUrl
     const priorAction = priorState.executables?.[child.exec]?.lastAction
     let actionType: string | undefined
     if (priorAction && /_COMPLETED$/i.test(priorAction.type)) {
@@ -615,8 +621,7 @@ async function runContainerLoop(profile: Profile, ctx: Context, input: ExecutorI
       // legacy `dispatch.ts` handled the same situation.
       let cliArgs: Record<string, unknown>
       if (child.target === "pr") {
-        const prUrl = priorState.core?.prUrl
-        const prNumber = prUrl ? parsePrNumber(prUrl) : null
+        const prNumber = knownPrUrl ? parsePrNumber(knownPrUrl) : null
         if (!prNumber) {
           const reason = `container child "${child.exec}" needs --pr but state.core.prUrl is unset`
           process.stderr.write(`[kody container] aborting: ${reason}\n`)
@@ -665,6 +670,7 @@ async function runContainerLoop(profile: Profile, ctx: Context, input: ExecutorI
       // emitted. saveTaskState (the standard postflight) is the canonical
       // writer; readTaskState reads the same comment back.
       const next = readContainerState(ctx, child, reader)
+      if (next.core?.prUrl) knownPrUrl = next.core.prUrl
       ctx.data.taskState = next
       const actionFromState = next.core?.lastOutcome?.type
       actionType = actionFromState ?? (childOut.exitCode === 0 ? "RUN_COMPLETED" : "RUN_FAILED")
@@ -705,16 +711,37 @@ async function runContainerLoop(profile: Profile, ctx: Context, input: ExecutorI
 }
 
 /**
- * Read the latest task state from disk (or fall back to whatever the
- * preflight cached if no issue is available). Always reads fresh between
- * children so that the child's just-written state is visible.
+ * Read the latest task state for the container's routing decision.
+ *
+ * Each child writes its outcome to the comment thread of whatever target it
+ * ran against (saveTaskState reads `ctx.data.commentTargetType`). A child
+ * with `target: "pr"` therefore writes its action to the PR's state comment,
+ * not the issue's — so the container must read from that same target to see
+ * the freshly-written REVIEW_ or FIX_ action. Reading the issue after a `pr`
+ * child returns stale state (the prior `run` action) and the wildcard
+ * fallback wrongly aborts the flow.
+ *
+ * Lookup order: child.target's matching thread first, issue fallback for
+ * `target: "issue"` children, then the cached preflight state if both gh
+ * round-trips fail.
  */
 function readContainerState(
   ctx: Context,
-  _child: ContainerChild,
+  child: ContainerChild,
   reader: (target: TaskTarget, number: number, cwd?: string) => TaskState,
 ): TaskState {
   const issueNumber = ctx.args.issue as number | undefined
+  const cached = ctx.data.taskState as TaskState | undefined
+  const prUrl = cached?.core?.prUrl
+  const prNumber = prUrl ? parsePrNumber(prUrl) : null
+
+  if (child.target === "pr" && prNumber) {
+    try {
+      return reader("pr", prNumber, ctx.cwd)
+    } catch {
+      // Fall through to issue / cache below.
+    }
+  }
   if (issueNumber !== undefined) {
     try {
       return reader("issue", issueNumber, ctx.cwd)
@@ -722,8 +749,8 @@ function readContainerState(
       // Fall through to cached state below.
     }
   }
-  if (ctx.data.taskState && typeof ctx.data.taskState === "object") {
-    return ctx.data.taskState as TaskState
+  if (cached && typeof cached === "object") {
+    return cached
   }
   return {
     schemaVersion: 1,
