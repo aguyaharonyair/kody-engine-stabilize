@@ -57,10 +57,22 @@ export async function waitForNextUserMessage(opts: InboxOptions): Promise<InboxR
 
     if (!opts.skipPull) {
       try {
-        execFileSync("git", ["pull", "--ff-only", "--quiet", "origin", "HEAD"], {
-          cwd: opts.cwd,
-          stdio: "pipe",
-        })
+        // Resolve the current branch; fall back to detached HEAD's tracked
+        // ref when checkout left us on a SHA. `git pull origin HEAD` is the
+        // wrong command — server-side HEAD = the remote's default branch,
+        // which is usually NOT the branch we're on.
+        const branch = currentBranch(opts.cwd)
+        if (branch) {
+          execFileSync("git", ["fetch", "--quiet", "origin", branch], { cwd: opts.cwd, stdio: "pipe" })
+          execFileSync("git", ["merge", "--ff-only", "--quiet", `origin/${branch}`], {
+            cwd: opts.cwd,
+            stdio: "pipe",
+          })
+        } else {
+          // Detached HEAD with no tracking — fetch all + just bail; the
+          // runner can't safely merge anything in this state.
+          execFileSync("git", ["fetch", "--quiet", "--all"], { cwd: opts.cwd, stdio: "pipe" })
+        }
       } catch (err) {
         // Non-fatal — the next poll will retry. A push from the runner that
         // hasn't been pulled yet can also cause a non-ff state; we'll resync
@@ -89,4 +101,23 @@ export async function waitForNextUserMessage(opts: InboxOptions): Promise<InboxR
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/**
+ * Returns the current branch name, or null when on detached HEAD with no
+ * resolvable upstream. Uses `symbolic-ref` (only succeeds on a real branch)
+ * to avoid the "HEAD" pseudo-name from `rev-parse --abbrev-ref` in detached
+ * mode.
+ */
+function currentBranch(cwd: string): string | null {
+  try {
+    const out = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+    const branch = out.toString("utf-8").trim()
+    return branch || null
+  } catch {
+    return null
+  }
 }

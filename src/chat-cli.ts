@@ -97,7 +97,10 @@ function commitChatFiles(cwd: string, sessionId: string, verbose: boolean): void
   if (paths.length === 0) return
   const opts = { cwd, stdio: verbose ? "inherit" : "pipe" } as const
   try {
-    execFileSync("git", ["add", ...paths], opts)
+    // -f because consumer repos sometimes gitignore .kody/* — committing
+    // session/event files is the durable fallback the dashboard depends on,
+    // not a user-content path that needs to be opt-in.
+    execFileSync("git", ["add", "-f", ...paths], opts)
     execFileSync("git", ["commit", "--quiet", "-m", `chat: reply for ${sessionId}`], opts)
     execFileSync("git", ["push", "--quiet", "origin", "HEAD"], opts)
   } catch (err) {

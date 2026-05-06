@@ -153,7 +153,10 @@ function commitTurn(cwd: string, sessionId: string, verbose: boolean): void {
   if (paths.length === 0) return
   const stdio = verbose ? "inherit" : "pipe"
   try {
-    execFileSync("git", ["add", ...paths], { cwd, stdio })
+    // -f: same rationale as chat-cli's commitChatFiles — .kody/* may be
+    // gitignored in consumer repos, but the dashboard's durable fallback
+    // depends on these files reaching origin.
+    execFileSync("git", ["add", "-f", ...paths], { cwd, stdio })
     execFileSync("git", ["commit", "--quiet", "-m", `chat: interactive turn for ${sessionId}`], { cwd, stdio })
     execFileSync("git", ["push", "--quiet", "origin", "HEAD"], { cwd, stdio })
   } catch (err) {
