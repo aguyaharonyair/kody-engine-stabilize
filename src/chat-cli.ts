@@ -21,7 +21,8 @@ import * as path from "node:path"
 import type { EventSink } from "./chat/events.js"
 import { eventsFilePath, FileSink, HttpSink, makeRunId, TeeSink } from "./chat/events.js"
 import { runChatTurn } from "./chat/loop.js"
-import { seedInitialMessage, sessionFilePath } from "./chat/session.js"
+import { runInteractiveMode } from "./chat/modes/interactive.js"
+import { readMeta, seedInitialMessage, sessionFilePath } from "./chat/session.js"
 import { loadConfig, needsLitellmProxy, parseProviderModel } from "./config.js"
 import { configureGitIdentity, installLitellmIfNeeded, resolveAuthToken, unpackAllSecrets } from "./kody-cli.js"
 import { startLitellmIfNeeded } from "./litellm.js"
@@ -184,7 +185,27 @@ export async function runChat(argv: string[]): Promise<number> {
 
   const sink = buildSink(cwd, sessionId, args.dashboardUrl)
 
+  // Read mode from session-file meta line. Absent meta = legacy one-shot
+  // (workflow dispatch = single reply). meta.mode = "interactive" enters
+  // the long-lived poll loop. Encoding mode in data (not workflow inputs)
+  // keeps kody.yml a thin shim — see CLAUDE.md / feedback_thin_yaml.md.
+  const meta = readMeta(sessionFile)
+
   try {
+    if (meta?.mode === "interactive") {
+      const result = await runInteractiveMode({
+        sessionId,
+        cwd,
+        model,
+        litellmUrl: litellm?.url ?? null,
+        sink,
+        meta,
+        verbose: args.verbose,
+        quiet: args.quiet,
+      })
+      return result.exitCode
+    }
+
     const result = await runChatTurn({
       sessionId,
       sessionFile,

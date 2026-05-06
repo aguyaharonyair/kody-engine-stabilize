@@ -19,8 +19,46 @@ export interface ChatTurn {
   toolCalls?: unknown[]
 }
 
+/**
+ * Optional first line of a session file. When absent, the session runs in the
+ * default one-shot mode (one dispatch = one reply). When present with
+ * `mode: "interactive"`, the engine enters a long-lived poll loop.
+ *
+ * Encoding the mode in the session file (rather than a workflow input) keeps
+ * `kody.yml` thin — see CLAUDE.md / feedback_thin_yaml.md.
+ */
+export interface SessionMeta {
+  type: "meta"
+  mode: "one-shot" | "interactive"
+  createdAt?: string
+  /** Optional caps — interactive mode honors these when present. */
+  idleExitMs?: number
+  hardCapMs?: number
+}
+
 export function sessionFilePath(cwd: string, sessionId: string): string {
   return path.join(cwd, ".kody", "sessions", `${sessionId}.jsonl`)
+}
+
+/**
+ * Read the optional meta line. Returns null if the file is missing, empty,
+ * or its first line is a chat turn (legacy / one-shot sessions). Malformed
+ * meta lines also return null — meta is purely additive, never load-bearing
+ * for the one-shot path.
+ */
+export function readMeta(file: string): SessionMeta | null {
+  if (!fs.existsSync(file)) return null
+  const raw = fs.readFileSync(file, "utf-8")
+  const firstLine = raw.split("\n", 1)[0]?.trim()
+  if (!firstLine) return null
+  try {
+    const parsed = JSON.parse(firstLine) as Partial<SessionMeta>
+    if (parsed.type !== "meta") return null
+    if (parsed.mode !== "one-shot" && parsed.mode !== "interactive") return null
+    return parsed as SessionMeta
+  } catch {
+    return null
+  }
 }
 
 export function readSession(file: string): ChatTurn[] {

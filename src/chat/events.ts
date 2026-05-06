@@ -11,7 +11,15 @@ import * as fs from "node:fs"
 import * as path from "node:path"
 
 export interface ChatEvent {
-  event: "chat.message" | "chat.tool" | "chat.thinking" | "chat.done" | "chat.error"
+  event:
+    | "chat.message"
+    | "chat.tool"
+    | "chat.thinking"
+    | "chat.done"
+    | "chat.error"
+    // Lifecycle events — only emitted by interactive mode.
+    | "chat.ready"
+    | "chat.exit"
   payload: Record<string, unknown>
   runId: string
   emittedAt: string
