@@ -1,0 +1,50 @@
+{
+  "name": "goal-tick",
+  "role": "primitive",
+  "describe": "One deterministic tick for one goal: read .kody/goals/<id>/state.json, dispatch @kody on the next ready task (or mark goal done when all tasks closed). No agent.",
+  "kind": "oneshot",
+  "inputs": [
+    {
+      "name": "goal",
+      "flag": "--goal",
+      "type": "string",
+      "required": true,
+      "describe": "Goal id — directory name under .kody/goals/."
+    }
+  ],
+  "claudeCode": {
+    "model": "inherit",
+    "permissionMode": "default",
+    "maxTurns": 0,
+    "maxThinkingTokens": null,
+    "systemPromptAppend": null,
+    "tools": [],
+    "hooks": [],
+    "skills": [],
+    "commands": [],
+    "subagents": [],
+    "plugins": [],
+    "mcpServers": []
+  },
+  "cliTools": [
+    {
+      "name": "gh",
+      "install": {
+        "required": true,
+        "checkCommand": "command -v gh"
+      },
+      "verify": "gh auth status",
+      "usage": "Use `gh issue list/comment/edit` to read goal-labelled tasks and dispatch @kody.",
+      "allowedUses": ["issue", "pr", "api"]
+    }
+  ],
+  "inputArtifacts": [],
+  "outputArtifacts": [],
+  "scripts": {
+    "preflight": [
+      { "shell": "tick.sh" },
+      { "script": "skipAgent" }
+    ],
+    "postflight": []
+  }
+}
