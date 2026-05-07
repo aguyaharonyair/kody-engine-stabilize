@@ -49,7 +49,7 @@ on:
     types: [closed]
   schedule:
     # Wakes every 30 minutes; kody fans out to whichever scheduled executables
-    # (mission-scheduler, memorize, watch-stale-prs, …) match this tick.
+    # (job-scheduler, memorize, watch-stale-prs, …) match this tick.
     #
     # `memorize` writes to `.kody/vault/` and opens a daily PR. If your
     # `.gitignore` ignores `.kody/*`, add `!.kody/vault/` and `!.kody/vault/**`

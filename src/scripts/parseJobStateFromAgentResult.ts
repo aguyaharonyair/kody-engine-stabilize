@@ -1,21 +1,21 @@
 /**
  * Postflight: extract the agent's proposed next state from a fenced code
- * block, validate it, and place it on ctx.data.nextMissionState. Mirror of
- * `parseIssueStateFromAgentResult` for the file-based mission model.
+ * block, validate it, and place it on ctx.data.nextJobState. Mirror of
+ * `parseIssueStateFromAgentResult` for the file-based job model.
  *
- * Reads previous rev from ctx.data.missionState (loaded by loadMissionFromFile).
+ * Reads previous rev from ctx.data.jobState (loaded by loadJobFromFile).
  *
  * Script args (via `with:`):
- *   fenceLabel  required — e.g. "kody-mission-next-state"
+ *   fenceLabel  required — e.g. "kody-job-next-state"
  *
- * Reads   ctx.data.missionState
- * Writes  ctx.data.nextMissionState ({ version, rev, cursor, data, done })
+ * Reads   ctx.data.jobState
+ * Writes  ctx.data.nextJobState ({ version, rev, cursor, data, done })
  *         ctx.data.nextStateParseError on failure
  */
 
 import type { PostflightScript } from "../executables/types.js"
 import type { StateEnvelope } from "./issueStateComment.js"
-import type { LoadedMissionState } from "./missionState/index.js"
+import type { LoadedJobState } from "./jobState/index.js"
 
 interface PartialEnvelope {
   cursor: string
@@ -36,10 +36,10 @@ function isPartialEnvelope(x: unknown): x is PartialEnvelope {
   )
 }
 
-export const parseMissionStateFromAgentResult: PostflightScript = async (ctx, _profile, agentResult, args) => {
+export const parseJobStateFromAgentResult: PostflightScript = async (ctx, _profile, agentResult, args) => {
   const fenceLabel = String(args?.fenceLabel ?? "")
   if (!fenceLabel) {
-    throw new Error("parseMissionStateFromAgentResult: `with.fenceLabel` is required")
+    throw new Error("parseJobStateFromAgentResult: `with.fenceLabel` is required")
   }
 
   if (!agentResult) {
@@ -67,7 +67,7 @@ export const parseMissionStateFromAgentResult: PostflightScript = async (ctx, _p
     return
   }
 
-  const loaded = ctx.data.missionState as LoadedMissionState | null | undefined
+  const loaded = ctx.data.jobState as LoadedJobState | null | undefined
   const prevRev = loaded?.state.rev ?? 0
 
   const next: StateEnvelope = {
@@ -77,7 +77,7 @@ export const parseMissionStateFromAgentResult: PostflightScript = async (ctx, _p
     data: parsed.data,
     done: parsed.done,
   }
-  ctx.data.nextMissionState = next
+  ctx.data.nextJobState = next
 }
 
 function escapeRegex(s: string): string {

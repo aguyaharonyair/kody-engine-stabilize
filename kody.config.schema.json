@@ -383,14 +383,14 @@
       },
       "additionalProperties": false
     },
-    "missions": {
+    "jobs": {
       "type": "object",
-      "description": "File-based mission configuration. Missions are long-running scheduled executables defined under .kody/missions/<slug>.md.",
+      "description": "File-based job configuration. Jobs are long-running scheduled executables defined under .kody/jobs/<slug>.md.",
       "properties": {
         "stateBackend": {
           "type": "string",
           "enum": ["contents-api", "local-file"],
-          "description": "Storage backend for mission state. \"contents-api\" (default) commits state to a tracked file via the GitHub Contents API — durable across runs but creates a commit per change. \"local-file\" stores state on disk and snapshots it to the GitHub Actions cache between workflow runs — no commit churn, but bound to cache eviction (7-day idle).",
+          "description": "Storage backend for job state. \"contents-api\" (default) commits state to a tracked file via the GitHub Contents API — durable across runs but creates a commit per change. \"local-file\" stores state on disk and snapshots it to the GitHub Actions cache between workflow runs — no commit churn, but bound to cache eviction (7-day idle).",
           "default": "contents-api"
         }
       },

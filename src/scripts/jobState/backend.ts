@@ -1,7 +1,7 @@
 /**
- * MissionStateBackend — storage abstraction for file-based mission state.
+ * JobStateBackend — storage abstraction for file-based job state.
  *
- * The engine treats mission state as a `StateEnvelope` keyed by mission slug.
+ * The engine treats job state as a `StateEnvelope` keyed by job slug.
  * How that state is durably stored (tracked file via Contents API, on-disk
  * file backed by Actions cache, future S3/Redis, …) is a backend concern.
  *
@@ -14,19 +14,19 @@
  *
  * `hydrate` and `persist` are optional — backends that are always live
  * (e.g. contents-API) leave them undefined. Backends that snapshot the
- * mission directory between runs (e.g. local-file + Actions cache)
+ * job directory between runs (e.g. local-file + Actions cache)
  * implement them.
  */
 
 import type { StateEnvelope } from "../issueStateComment.js"
 
-export interface LoadedMissionState {
+export interface LoadedJobState {
   /** Path of the state file inside the repo (relative). Surfaced for logs/debug. */
   path: string
   /**
    * Backend-private token returned from `load`, passed back unchanged to
    * `save`. Examples: blob SHA for the contents-API backend; null for
-   * local-file. Mission-tick logic must treat this as opaque.
+   * local-file. Job-tick logic must treat this as opaque.
    */
   handle: unknown
   /** The decoded envelope, or a fresh seed if no prior state existed. */
@@ -35,7 +35,7 @@ export interface LoadedMissionState {
   created: boolean
 }
 
-export interface MissionStateBackend {
+export interface JobStateBackend {
   /** Human-readable backend name for logging. */
   readonly name: string
 
@@ -55,16 +55,16 @@ export interface MissionStateBackend {
   persist?(): Promise<void>
 
   /**
-   * Load the state for a single mission slug. Returns a fresh seed envelope
+   * Load the state for a single job slug. Returns a fresh seed envelope
    * (with `created: true`) when no prior state exists.
    */
-  load(slug: string): LoadedMissionState | Promise<LoadedMissionState>
+  load(slug: string): LoadedJobState | Promise<LoadedJobState>
 
   /**
    * Persist `next` for the slug carried by `loaded`. Returns true if the
    * write happened, false if it was skipped as a no-op (state unchanged).
    */
-  save(loaded: LoadedMissionState, next: StateEnvelope): boolean | Promise<boolean>
+  save(loaded: LoadedJobState, next: StateEnvelope): boolean | Promise<boolean>
 }
 
 /**
@@ -79,11 +79,11 @@ export function isStateUnchanged(prev: StateEnvelope, next: StateEnvelope): bool
 }
 
 /**
- * Compute the canonical state-file path for a given mission slug. Backends
+ * Compute the canonical state-file path for a given job slug. Backends
  * that map slugs to files use this so all backends agree on layout.
  */
-export function stateFilePath(missionsDir: string, slug: string): string {
-  return `${missionsDir.replace(/\/+$/, "")}/${slug}.state.json`
+export function stateFilePath(jobsDir: string, slug: string): string {
+  return `${jobsDir.replace(/\/+$/, "")}/${slug}.state.json`
 }
 
 /**

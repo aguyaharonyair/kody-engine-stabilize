@@ -74,9 +74,9 @@ export interface KodyConfig {
     releaseBranch?: string
     timeoutMs?: number
   }
-  missions?: {
+  jobs?: {
     /**
-     * Storage backend for file-based mission state.
+     * Storage backend for file-based job state.
      *   "contents-api" (default) — durable tracked file, one commit per change.
      *   "local-file"             — on-disk file, snapshotted to GitHub Actions
      *                              cache between workflow runs. Eliminates
@@ -168,19 +168,19 @@ export function loadConfig(projectDir: string = process.cwd()): KodyConfig {
     aliases: mergeAliases(raw.aliases),
     classify: parseClassifyConfig(raw.classify),
     release: parseReleaseConfig(raw.release),
-    missions: parseMissionsConfig(raw.missions),
+    jobs: parseJobsConfig(raw.jobs),
   }
 }
 
-function parseMissionsConfig(raw: unknown): KodyConfig["missions"] {
+function parseJobsConfig(raw: unknown): KodyConfig["jobs"] {
   if (!raw || typeof raw !== "object") return undefined
   const r = raw as Record<string, unknown>
-  const out: NonNullable<KodyConfig["missions"]> = {}
+  const out: NonNullable<KodyConfig["jobs"]> = {}
   if (r.stateBackend === "contents-api" || r.stateBackend === "local-file") {
     out.stateBackend = r.stateBackend
   } else if (typeof r.stateBackend === "string") {
     throw new Error(
-      `kody.config.json: missions.stateBackend must be "contents-api" or "local-file", got "${r.stateBackend}"`,
+      `kody.config.json: jobs.stateBackend must be "contents-api" or "local-file", got "${r.stateBackend}"`,
     )
   }
   return Object.keys(out).length > 0 ? out : undefined

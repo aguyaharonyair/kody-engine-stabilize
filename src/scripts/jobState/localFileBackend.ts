@@ -1,13 +1,13 @@
 /**
- * Local-file backend: mission state lives as plain files on disk under
- * `<cwd>/<missionsDir>/<slug>.state.json`. No git involvement at all.
+ * Local-file backend: job state lives as plain files on disk under
+ * `<cwd>/<jobsDir>/<slug>.state.json`. No git involvement at all.
  *
  * Durability between workflow runs is provided by the `hydrate`/`persist`
  * lifecycle, which restores from / saves to the GitHub Actions cache when
  * running inside Actions. Off-CI, both lifecycle hooks are no-ops — the
- * directory is whatever's on disk (handy for local mission development).
+ * directory is whatever's on disk (handy for local job development).
  *
- * Cache key format: `kody-mission-state-<owner>-<repo>-<runId>-<timestamp>`.
+ * Cache key format: `kody-job-state-<owner>-<repo>-<runId>-<timestamp>`.
  * Restore uses a prefix-match restore-keys list to pull the most recent
  * snapshot regardless of which run produced it.
  */
@@ -15,13 +15,13 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { initialStateEnvelope, isStateEnvelope, type StateEnvelope } from "../issueStateComment.js"
-import { isStateUnchanged, type LoadedMissionState, type MissionStateBackend, stateFilePath } from "./backend.js"
+import { isStateUnchanged, type LoadedJobState, type JobStateBackend, stateFilePath } from "./backend.js"
 
 export interface LocalFileBackendOptions {
   /** Absolute path to the consumer repo working tree. */
   cwd: string
-  /** Mission directory relative to cwd (e.g. ".kody/missions"). */
-  missionsDir: string
+  /** Job directory relative to cwd (e.g. ".kody/jobs"). */
+  jobsDir: string
   /** Owner/repo are used as cache key components for cross-repo isolation. */
   owner: string
   repo: string
@@ -55,11 +55,11 @@ export interface ActionsCacheAdapter {
   save(paths: string[], primaryKey: string): Promise<void>
 }
 
-export class LocalFileBackend implements MissionStateBackend {
+export class LocalFileBackend implements JobStateBackend {
   readonly name = "local-file"
 
   private readonly cwd: string
-  private readonly missionsDir: string
+  private readonly jobsDir: string
   private readonly absDir: string
   private readonly owner: string
   private readonly repo: string
@@ -67,23 +67,23 @@ export class LocalFileBackend implements MissionStateBackend {
 
   constructor(opts: LocalFileBackendOptions) {
     if (!opts.cwd) throw new Error("LocalFileBackend: cwd is required")
-    if (!opts.missionsDir) throw new Error("LocalFileBackend: missionsDir is required")
+    if (!opts.jobsDir) throw new Error("LocalFileBackend: jobsDir is required")
     if (!opts.owner || !opts.repo) throw new Error("LocalFileBackend: owner and repo are required")
     this.cwd = opts.cwd
-    this.missionsDir = opts.missionsDir
-    this.absDir = path.join(opts.cwd, opts.missionsDir)
+    this.jobsDir = opts.jobsDir
+    this.absDir = path.join(opts.cwd, opts.jobsDir)
     this.owner = opts.owner
     this.repo = opts.repo
     this.cache = opts.cache ?? defaultCacheAdapter()
   }
 
   /**
-   * Restore the mission directory from the most recent Actions cache entry
+   * Restore the job directory from the most recent Actions cache entry
    * for this repo. No-op when not running in Actions or when no cache exists.
    */
   async hydrate(): Promise<void> {
     if (!this.cache.isAvailable()) {
-      process.stdout.write(`[missions/state] hydrate skipped: actions cache unavailable\n`)
+      process.stdout.write(`[jobs/state] hydrate skipped: actions cache unavailable\n`)
       return
     }
     fs.mkdirSync(this.absDir, { recursive: true })
@@ -94,43 +94,43 @@ export class LocalFileBackend implements MissionStateBackend {
     try {
       const matched = await this.cache.restore([this.absDir], probeKey, [prefix])
       if (matched) {
-        process.stdout.write(`[missions/state] hydrate hit: ${matched}\n`)
+        process.stdout.write(`[jobs/state] hydrate hit: ${matched}\n`)
       } else {
-        process.stdout.write(`[missions/state] hydrate miss (cold start)\n`)
+        process.stdout.write(`[jobs/state] hydrate miss (cold start)\n`)
       }
     } catch (err) {
-      // Don't fail the run if cache restore is flaky — missions can reseed.
+      // Don't fail the run if cache restore is flaky — jobs can reseed.
       const msg = err instanceof Error ? err.message : String(err)
-      process.stderr.write(`[missions/state] hydrate failed (continuing): ${msg}\n`)
+      process.stderr.write(`[jobs/state] hydrate failed (continuing): ${msg}\n`)
     }
   }
 
   /**
-   * Save the mission directory to the Actions cache under a unique key.
+   * Save the job directory to the Actions cache under a unique key.
    * No-op when not running in Actions. Errors are logged, never thrown —
    * callers run this in a finally block and must not swallow real errors.
    */
   async persist(): Promise<void> {
     if (!this.cache.isAvailable()) {
-      process.stdout.write(`[missions/state] persist skipped: actions cache unavailable\n`)
+      process.stdout.write(`[jobs/state] persist skipped: actions cache unavailable\n`)
       return
     }
     if (!fs.existsSync(this.absDir)) {
-      // Nothing to save (no mission ever ran). Don't error.
+      // Nothing to save (no job ever ran). Don't error.
       return
     }
     const key = `${this.cacheKeyPrefix()}${process.env.GITHUB_RUN_ID ?? "norunid"}-${Date.now()}`
     try {
       await this.cache.save([this.absDir], key)
-      process.stdout.write(`[missions/state] persist saved: ${key}\n`)
+      process.stdout.write(`[jobs/state] persist saved: ${key}\n`)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      process.stderr.write(`[missions/state] persist failed (continuing): ${msg}\n`)
+      process.stderr.write(`[jobs/state] persist failed (continuing): ${msg}\n`)
     }
   }
 
-  load(slug: string): LoadedMissionState {
-    const relPath = stateFilePath(this.missionsDir, slug)
+  load(slug: string): LoadedJobState {
+    const relPath = stateFilePath(this.jobsDir, slug)
     const absPath = path.join(this.cwd, relPath)
     if (!fs.existsSync(absPath)) {
       return { path: relPath, handle: null, state: initialStateEnvelope("seed"), created: true }
@@ -149,7 +149,7 @@ export class LocalFileBackend implements MissionStateBackend {
     return { path: relPath, handle: null, state: parsed, created: false }
   }
 
-  save(loaded: LoadedMissionState, next: StateEnvelope): boolean {
+  save(loaded: LoadedJobState, next: StateEnvelope): boolean {
     // Same idempotency rule as contents-API: skip when state is structurally
     // unchanged. Avoids unnecessary disk writes (and noise on cache deltas).
     if (!loaded.created && isStateUnchanged(loaded.state, next)) {
@@ -163,7 +163,7 @@ export class LocalFileBackend implements MissionStateBackend {
   }
 
   private cacheKeyPrefix(): string {
-    return `kody-mission-state-${sanitizeKey(this.owner)}-${sanitizeKey(this.repo)}-`
+    return `kody-job-state-${sanitizeKey(this.owner)}-${sanitizeKey(this.repo)}-`
   }
 }
 
@@ -175,7 +175,7 @@ function sanitizeKey(s: string): string {
 
 /**
  * Default cache adapter — lazy-imports `@actions/cache` so the engine starts
- * cheap when missions aren't in play. Reports unavailable when not in
+ * cheap when jobs aren't in play. Reports unavailable when not in
  * Actions or when the cache env vars are missing.
  */
 function defaultCacheAdapter(): ActionsCacheAdapter {

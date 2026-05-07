@@ -34,7 +34,7 @@ npx -y -p @kody-ade/kody-engine@latest kody init
 
 Required repo secrets: at least one model provider key (e.g. `MINIMAX_API_KEY`, `ANTHROPIC_API_KEY`). Recommended: `KODY_TOKEN` PAT so kody's commits trigger downstream CI and can modify `.github/workflows/*`.
 
-The consumer workflow listens on three triggers: `issue_comment` (for `@kody …` dispatch), `workflow_dispatch` (manual runs, chat mode, mission wake), and `pull_request: [closed]` (auto-finalizes a merged `release/vX.Y.Z` PR).
+The consumer workflow listens on three triggers: `issue_comment` (for `@kody …` dispatch), `workflow_dispatch` (manual runs, chat mode, job wake), and `pull_request: [closed]` (auto-finalizes a merged `release/vX.Y.Z` PR).
 
 ## Commands
 
@@ -58,9 +58,9 @@ kody bug       --issue <N>                             # plan → run → review
 kody spec      --issue <N>                             # research → plan (no code, terminates at plan)
 kody chore     --issue <N>                             # run → review (→ fix)
 
-# missions & watches (scheduled, coordinate work via issue state)
-kody mission-scheduler                                 # fans out to per-issue mission-tick
-kody mission-tick      --issue <N>                     # one tick of a kody:mission issue
+# jobs & watches (scheduled, coordinate work via issue state)
+kody job-scheduler                                 # fans out to per-issue job-tick
+kody job-tick      --issue <N>                     # one tick of a kody:job issue
 kody watch-stale-prs                                   # weekly stale-PR report
 kody memorize                                          # daily vault wiki update from recent PRs
 
@@ -78,11 +78,11 @@ kody chat      [--session <id>]                        # dashboard-driven chat s
 
 Each flow (`feature`, `bug`, `spec`, `chore`) is a declarative transition table: postflight entries dispatch the next executable based on `data.taskState.core.lastOutcome.type` via `runWhen`. No engine changes to add a new flow — drop a new `src/executables/<flow-name>/` with a different table. `classify` picks the flow for an unlabeled issue.
 
-### Missions
+### Jobs
 
-A **mission** is a stateful, bounded goal expressed as a labeled GitHub issue (`kody:mission`). A **watch** is a stateless repeating loop. A **manager** is a mission whose job happens to be overseeing other missions. All three run on the same scheduled-executable substrate.
+A **job** is a stateful, bounded goal expressed as a labeled GitHub issue (`kody:job`). A **watch** is a stateless repeating loop. A **manager** is a job whose job happens to be overseeing other jobs. All three run on the same scheduled-executable substrate.
 
-`mission-scheduler` wakes on cron (default `*/5 * * * *`) or empty `workflow_dispatch`, finds every open `kody:mission` issue, and calls `mission-tick` once per issue. The tick agent reads the issue body (human-owned prose) and a dedicated state comment (bot-owned JSON), decides the next step, and emits a fenced `kody-mission-next-state` block the postflight persists. Children are spawned via `gh workflow run kody.yml` (not `@kody` comments — the default `GITHUB_TOKEN` can dispatch workflows but can't post auto-triggering comments).
+`job-scheduler` wakes on cron (default `*/5 * * * *`) or empty `workflow_dispatch`, finds every open `kody:job` issue, and calls `job-tick` once per issue. The tick agent reads the issue body (human-owned prose) and a dedicated state comment (bot-owned JSON), decides the next step, and emits a fenced `kody-job-next-state` block the postflight persists. Children are spawned via `gh workflow run kody.yml` (not `@kody` comments — the default `GITHUB_TOKEN` can dispatch workflows but can't post auto-triggering comments).
 
 ### `ui-review`
 

@@ -9,10 +9,10 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { StateEnvelope } from "../../src/scripts/issueStateComment.js"
-import { type ActionsCacheAdapter, LocalFileBackend } from "../../src/scripts/missionState/localFileBackend.js"
+import { type ActionsCacheAdapter, LocalFileBackend } from "../../src/scripts/jobState/localFileBackend.js"
 
 function tmpDir(): string {
-  return fs.mkdtempSync(path.join(os.tmpdir(), "kody-mission-state-"))
+  return fs.mkdtempSync(path.join(os.tmpdir(), "kody-job-state-"))
 }
 
 function envelope(overrides: Partial<StateEnvelope> = {}): StateEnvelope {
@@ -47,12 +47,12 @@ describe("LocalFileBackend", () => {
   })
 
   describe("constructor", () => {
-    it("requires cwd, missionsDir, owner, repo", () => {
-      expect(() => new LocalFileBackend({ cwd: "", missionsDir: ".kody/missions", owner: "o", repo: "r" })).toThrow(
+    it("requires cwd, jobsDir, owner, repo", () => {
+      expect(() => new LocalFileBackend({ cwd: "", jobsDir: ".kody/jobs", owner: "o", repo: "r" })).toThrow(
         /cwd/i,
       )
-      expect(() => new LocalFileBackend({ cwd, missionsDir: "", owner: "o", repo: "r" })).toThrow(/missionsDir/i)
-      expect(() => new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "", repo: "r" })).toThrow(
+      expect(() => new LocalFileBackend({ cwd, jobsDir: "", owner: "o", repo: "r" })).toThrow(/jobsDir/i)
+      expect(() => new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "", repo: "r" })).toThrow(
         /owner.*repo/i,
       )
     })
@@ -60,22 +60,22 @@ describe("LocalFileBackend", () => {
 
   describe("load", () => {
     it("returns a seed envelope when no state file exists", () => {
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r" })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r" })
       const out = b.load("auto-sync")
       expect(out.created).toBe(true)
       expect(out.handle).toBeNull()
       expect(out.state.rev).toBe(0)
       expect(out.state.cursor).toBe("seed")
-      expect(out.path).toBe(".kody/missions/auto-sync.state.json")
+      expect(out.path).toBe(".kody/jobs/auto-sync.state.json")
     })
 
     it("reads and parses an existing state file", () => {
-      const dir = path.join(cwd, ".kody/missions")
+      const dir = path.join(cwd, ".kody/jobs")
       fs.mkdirSync(dir, { recursive: true })
       const state = envelope({ rev: 7, cursor: "tick-7" })
       fs.writeFileSync(path.join(dir, "auto-sync.state.json"), JSON.stringify(state, null, 2))
 
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r" })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r" })
       const out = b.load("auto-sync")
 
       expect(out.created).toBe(false)
@@ -84,46 +84,46 @@ describe("LocalFileBackend", () => {
     })
 
     it("throws on invalid JSON", () => {
-      const dir = path.join(cwd, ".kody/missions")
+      const dir = path.join(cwd, ".kody/jobs")
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(path.join(dir, "auto-sync.state.json"), "not json")
 
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r" })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r" })
       expect(() => b.load("auto-sync")).toThrow(/not valid JSON/i)
     })
 
     it("throws on non-StateEnvelope JSON", () => {
-      const dir = path.join(cwd, ".kody/missions")
+      const dir = path.join(cwd, ".kody/jobs")
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(path.join(dir, "auto-sync.state.json"), JSON.stringify({ wrong: "shape" }))
 
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r" })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r" })
       expect(() => b.load("auto-sync")).toThrow(/not a StateEnvelope/i)
     })
   })
 
   describe("save", () => {
-    it("creates the missions directory and writes the file when seeding", () => {
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r" })
+    it("creates the jobs directory and writes the file when seeding", () => {
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r" })
       const wrote = b.save(
-        { path: ".kody/missions/auto-sync.state.json", handle: null, state: envelope({ rev: 0 }), created: true },
+        { path: ".kody/jobs/auto-sync.state.json", handle: null, state: envelope({ rev: 0 }), created: true },
         envelope({ rev: 1 }),
       )
       expect(wrote).toBe(true)
-      const onDisk = fs.readFileSync(path.join(cwd, ".kody/missions/auto-sync.state.json"), "utf-8")
+      const onDisk = fs.readFileSync(path.join(cwd, ".kody/jobs/auto-sync.state.json"), "utf-8")
       expect(JSON.parse(onDisk)).toEqual(envelope({ rev: 1 }))
     })
 
     it("skips writes when state is structurally unchanged", () => {
-      const dir = path.join(cwd, ".kody/missions")
+      const dir = path.join(cwd, ".kody/jobs")
       fs.mkdirSync(dir, { recursive: true })
       const prev = envelope({ rev: 5, cursor: "same", data: { x: 1 } })
       fs.writeFileSync(path.join(dir, "auto-sync.state.json"), JSON.stringify(prev))
 
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r" })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r" })
       const next = envelope({ rev: 6, cursor: "same", data: { x: 1 } })
       const wrote = b.save(
-        { path: ".kody/missions/auto-sync.state.json", handle: null, state: prev, created: false },
+        { path: ".kody/jobs/auto-sync.state.json", handle: null, state: prev, created: false },
         next,
       )
       expect(wrote).toBe(false)
@@ -132,12 +132,12 @@ describe("LocalFileBackend", () => {
     })
 
     it("writes when cursor or data changes", () => {
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r" })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r" })
       const prev = envelope({ rev: 5, cursor: "a" })
-      b.save({ path: ".kody/missions/auto-sync.state.json", handle: null, state: prev, created: true }, prev)
+      b.save({ path: ".kody/jobs/auto-sync.state.json", handle: null, state: prev, created: true }, prev)
       const next = envelope({ rev: 6, cursor: "b" })
       const wrote = b.save(
-        { path: ".kody/missions/auto-sync.state.json", handle: null, state: prev, created: false },
+        { path: ".kody/jobs/auto-sync.state.json", handle: null, state: prev, created: false },
         next,
       )
       expect(wrote).toBe(true)
@@ -149,7 +149,7 @@ describe("LocalFileBackend", () => {
       const cache = stubAdapter()
       const b = new LocalFileBackend({
         cwd,
-        missionsDir: ".kody/missions",
+        jobsDir: ".kody/jobs",
         owner: "acme",
         repo: "widgets",
         cache,
@@ -157,23 +157,23 @@ describe("LocalFileBackend", () => {
       await b.hydrate()
       expect(cache.restore).toHaveBeenCalledTimes(1)
       const [paths, primaryKey, restoreKeys] = (cache.restore as ReturnType<typeof vi.fn>).mock.calls[0]!
-      expect(paths).toEqual([path.join(cwd, ".kody/missions")])
-      expect(primaryKey).toContain("kody-mission-state-acme-widgets-")
-      expect(restoreKeys).toEqual(["kody-mission-state-acme-widgets-"])
+      expect(paths).toEqual([path.join(cwd, ".kody/jobs")])
+      expect(primaryKey).toContain("kody-job-state-acme-widgets-")
+      expect(restoreKeys).toEqual(["kody-job-state-acme-widgets-"])
     })
 
     it("is a no-op when cache is unavailable", async () => {
       const cache = stubAdapter({ isAvailable: vi.fn(() => false) })
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r", cache })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r", cache })
       await b.hydrate()
       expect(cache.restore).not.toHaveBeenCalled()
     })
 
-    it("creates the missions directory before restore", async () => {
+    it("creates the jobs directory before restore", async () => {
       const cache = stubAdapter()
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r", cache })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r", cache })
       await b.hydrate()
-      expect(fs.existsSync(path.join(cwd, ".kody/missions"))).toBe(true)
+      expect(fs.existsSync(path.join(cwd, ".kody/jobs"))).toBe(true)
     })
 
     it("does not throw if cache.restore throws", async () => {
@@ -182,7 +182,7 @@ describe("LocalFileBackend", () => {
           throw new Error("transient cache error")
         }),
       })
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r", cache })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r", cache })
       await expect(b.hydrate()).resolves.toBeUndefined()
     })
 
@@ -190,24 +190,24 @@ describe("LocalFileBackend", () => {
       const cache = stubAdapter()
       const b = new LocalFileBackend({
         cwd,
-        missionsDir: ".kody/missions",
+        jobsDir: ".kody/jobs",
         owner: "weird org/name",
         repo: "x:y",
         cache,
       })
       await b.hydrate()
       const [, primaryKey] = (cache.restore as ReturnType<typeof vi.fn>).mock.calls[0]!
-      expect(primaryKey).toMatch(/^kody-mission-state-weird-org-name-x-y-/)
+      expect(primaryKey).toMatch(/^kody-job-state-weird-org-name-x-y-/)
     })
   })
 
   describe("persist", () => {
-    it("calls cache.save under a unique key when missions dir exists", async () => {
-      fs.mkdirSync(path.join(cwd, ".kody/missions"), { recursive: true })
+    it("calls cache.save under a unique key when jobs dir exists", async () => {
+      fs.mkdirSync(path.join(cwd, ".kody/jobs"), { recursive: true })
       const cache = stubAdapter()
       const b = new LocalFileBackend({
         cwd,
-        missionsDir: ".kody/missions",
+        jobsDir: ".kody/jobs",
         owner: "acme",
         repo: "widgets",
         cache,
@@ -215,33 +215,33 @@ describe("LocalFileBackend", () => {
       await b.persist()
       expect(cache.save).toHaveBeenCalledTimes(1)
       const [paths, key] = (cache.save as ReturnType<typeof vi.fn>).mock.calls[0]!
-      expect(paths).toEqual([path.join(cwd, ".kody/missions")])
-      expect(key).toContain("kody-mission-state-acme-widgets-")
+      expect(paths).toEqual([path.join(cwd, ".kody/jobs")])
+      expect(key).toContain("kody-job-state-acme-widgets-")
     })
 
     it("is a no-op when cache is unavailable", async () => {
-      fs.mkdirSync(path.join(cwd, ".kody/missions"), { recursive: true })
+      fs.mkdirSync(path.join(cwd, ".kody/jobs"), { recursive: true })
       const cache = stubAdapter({ isAvailable: vi.fn(() => false) })
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r", cache })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r", cache })
       await b.persist()
       expect(cache.save).not.toHaveBeenCalled()
     })
 
-    it("is a no-op when missions directory does not exist (no missions ever ran)", async () => {
+    it("is a no-op when jobs directory does not exist (no jobs ever ran)", async () => {
       const cache = stubAdapter()
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r", cache })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r", cache })
       await b.persist()
       expect(cache.save).not.toHaveBeenCalled()
     })
 
     it("swallows save errors so the workflow does not fail on cache hiccups", async () => {
-      fs.mkdirSync(path.join(cwd, ".kody/missions"), { recursive: true })
+      fs.mkdirSync(path.join(cwd, ".kody/jobs"), { recursive: true })
       const cache = stubAdapter({
         save: vi.fn(async () => {
           throw new Error("cache offline")
         }),
       })
-      const b = new LocalFileBackend({ cwd, missionsDir: ".kody/missions", owner: "o", repo: "r", cache })
+      const b = new LocalFileBackend({ cwd, jobsDir: ".kody/jobs", owner: "o", repo: "r", cache })
       await expect(b.persist()).resolves.toBeUndefined()
     })
   })

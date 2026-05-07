@@ -16,8 +16,8 @@ import { diagMcp } from "./diagMcp.js"
 import { discoverQaContext } from "./discoverQaContext.js"
 import { dispatch } from "./dispatch.js"
 import { dispatchClassified } from "./dispatchClassified.js"
-import { dispatchMissionFileTicks } from "./dispatchMissionFileTicks.js"
-import { dispatchMissionTicks } from "./dispatchMissionTicks.js"
+import { dispatchJobFileTicks } from "./dispatchJobFileTicks.js"
+import { dispatchJobTicks } from "./dispatchJobTicks.js"
 import { ensureMemorizePr } from "./ensureMemorizePr.js"
 import { ensurePr } from "./ensurePr.js"
 import { finishFlow } from "./finishFlow.js"
@@ -28,7 +28,7 @@ import { loadConventions } from "./loadConventions.js"
 import { loadCoverageRules } from "./loadCoverageRules.js"
 import { loadIssueContext } from "./loadIssueContext.js"
 import { loadIssueStateComment } from "./loadIssueStateComment.js"
-import { loadMissionFromFile } from "./loadMissionFromFile.js"
+import { loadJobFromFile } from "./loadJobFromFile.js"
 import { loadPriorArt } from "./loadPriorArt.js"
 import { loadQaGuide } from "./loadQaGuide.js"
 import { loadTaskState } from "./loadTaskState.js"
@@ -40,7 +40,7 @@ import { mirrorStateToPr } from "./mirrorStateToPr.js"
 import { notifyTerminal } from "./notifyTerminal.js"
 import { parseAgentResult } from "./parseAgentResult.js"
 import { parseIssueStateFromAgentResult } from "./parseIssueStateFromAgentResult.js"
-import { parseMissionStateFromAgentResult } from "./parseMissionStateFromAgentResult.js"
+import { parseJobStateFromAgentResult } from "./parseJobStateFromAgentResult.js"
 import { parseReproOutput } from "./parseReproOutput.js"
 import { persistArtifacts } from "./persistArtifacts.js"
 import { persistFlowState } from "./persistFlowState.js"
@@ -70,7 +70,7 @@ import { verifyReproFails } from "./verifyReproFails.js"
 import { waitForCi } from "./waitForCi.js"
 import { watchStalePrsFlow } from "./watchStalePrsFlow.js"
 import { writeIssueStateComment } from "./writeIssueStateComment.js"
-import { writeMissionStateFile } from "./writeMissionStateFile.js"
+import { writeJobStateFile } from "./writeJobStateFile.js"
 import { writeRunSummary } from "./writeRunSummary.js"
 
 export const preflightScripts: Record<string, PreflightScript> = {
@@ -88,7 +88,7 @@ export const preflightScripts: Record<string, PreflightScript> = {
   loadVaultContext,
   loadIssueContext,
   loadIssueStateComment,
-  loadMissionFromFile,
+  loadJobFromFile,
   loadConventions,
   loadCoverageRules,
   loadPriorArt,
@@ -103,17 +103,17 @@ export const preflightScripts: Record<string, PreflightScript> = {
   skipAgent,
   classifyByLabel,
   diagMcp,
-  dispatchMissionTicks,
-  dispatchMissionFileTicks,
+  dispatchJobTicks,
+  dispatchJobFileTicks,
 }
 
 export const postflightScripts: Record<string, PostflightScript> = {
   parseAgentResult,
   parseIssueStateFromAgentResult,
-  parseMissionStateFromAgentResult,
+  parseJobStateFromAgentResult,
   parseReproOutput,
   writeIssueStateComment,
-  writeMissionStateFile,
+  writeJobStateFile,
   requireFeedbackActions,
   requirePlanDeviations,
   verify,

@@ -4,7 +4,7 @@
  * Reads kody config → github.owner/repo, looks at ctx.args[<issueArg>] for
  * the issue number. Places:
  *   ctx.data.stateMarker          echoed back from `with.marker` for later scripts
- *   ctx.data.issueIntent          issue body (human-owned prose = the mission)
+ *   ctx.data.issueIntent          issue body (human-owned prose = the job)
  *   ctx.data.issueTitle           issue title
  *   ctx.data.issueStateComment    { commentId, commentNodeId, state } | null on first run
  *

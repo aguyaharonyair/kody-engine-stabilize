@@ -11,7 +11,7 @@ vi.mock("../../src/issue.js", () => ({
 
 import { gh as ghMock } from "../../src/issue.js"
 import type { StateEnvelope } from "../../src/scripts/issueStateComment.js"
-import { ContentsApiBackend } from "../../src/scripts/missionState/contentsApiBackend.js"
+import { ContentsApiBackend } from "../../src/scripts/jobState/contentsApiBackend.js"
 
 const gh = ghMock as unknown as ReturnType<typeof vi.fn>
 
@@ -30,7 +30,7 @@ function backend() {
   return new ContentsApiBackend({
     owner: "acme",
     repo: "widgets",
-    missionsDir: ".kody/missions",
+    jobsDir: ".kody/jobs",
     cwd: "/tmp/repo",
   })
 }
@@ -42,8 +42,8 @@ describe("ContentsApiBackend", () => {
 
   describe("constructor", () => {
     it("requires owner and repo", () => {
-      expect(() => new ContentsApiBackend({ owner: "", repo: "r", missionsDir: "x" })).toThrow(/owner.*required/i)
-      expect(() => new ContentsApiBackend({ owner: "o", repo: "", missionsDir: "x" })).toThrow(/repo.*required/i)
+      expect(() => new ContentsApiBackend({ owner: "", repo: "r", jobsDir: "x" })).toThrow(/owner.*required/i)
+      expect(() => new ContentsApiBackend({ owner: "o", repo: "", jobsDir: "x" })).toThrow(/repo.*required/i)
     })
   })
 
@@ -59,10 +59,10 @@ describe("ContentsApiBackend", () => {
       expect(out.handle).toBeNull()
       expect(out.state.rev).toBe(0)
       expect(out.state.cursor).toBe("seed")
-      expect(out.path).toBe(".kody/missions/auto-sync.state.json")
+      expect(out.path).toBe(".kody/jobs/auto-sync.state.json")
     })
 
-    it("decodes a base64 contents response into a LoadedMissionState", () => {
+    it("decodes a base64 contents response into a LoadedJobState", () => {
       const state = envelope({ rev: 5, cursor: "tick-5" })
       const body = JSON.stringify(state)
       gh.mockReturnValueOnce(
@@ -71,7 +71,7 @@ describe("ContentsApiBackend", () => {
           encoding: "base64",
           content: Buffer.from(body, "utf-8").toString("base64"),
           sha: "abc123",
-          path: ".kody/missions/auto-sync.state.json",
+          path: ".kody/jobs/auto-sync.state.json",
         }),
       )
 
@@ -101,7 +101,7 @@ describe("ContentsApiBackend", () => {
           encoding: "base64",
           content: Buffer.from(JSON.stringify({ not: "envelope" }), "utf-8").toString("base64"),
           sha: "abc",
-          path: ".kody/missions/auto-sync.state.json",
+          path: ".kody/jobs/auto-sync.state.json",
         }),
       )
       expect(() => backend().load("auto-sync")).toThrow(/not a StateEnvelope/i)
@@ -113,7 +113,7 @@ describe("ContentsApiBackend", () => {
       gh.mockReturnValueOnce("{}")
       const next = envelope({ rev: 1 })
       const wrote = backend().save(
-        { path: ".kody/missions/auto-sync.state.json", handle: null, state: envelope({ rev: 0 }), created: true },
+        { path: ".kody/jobs/auto-sync.state.json", handle: null, state: envelope({ rev: 0 }), created: true },
         next,
       )
       expect(wrote).toBe(true)
@@ -130,7 +130,7 @@ describe("ContentsApiBackend", () => {
       gh.mockReturnValueOnce("{}")
       const wrote = backend().save(
         {
-          path: ".kody/missions/auto-sync.state.json",
+          path: ".kody/jobs/auto-sync.state.json",
           handle: "old-sha",
           state: envelope({ rev: 5, cursor: "before" }),
           created: false,
@@ -147,7 +147,7 @@ describe("ContentsApiBackend", () => {
       const next = envelope({ rev: 6, cursor: "same", data: { x: 1 } })
 
       const wrote = backend().save(
-        { path: ".kody/missions/auto-sync.state.json", handle: "sha", state: prev, created: false },
+        { path: ".kody/jobs/auto-sync.state.json", handle: "sha", state: prev, created: false },
         next,
       )
       expect(wrote).toBe(false)
@@ -159,7 +159,7 @@ describe("ContentsApiBackend", () => {
       const prev = envelope({ rev: 5, cursor: "a" })
       const next = envelope({ rev: 6, cursor: "b" })
       const wrote = backend().save(
-        { path: ".kody/missions/auto-sync.state.json", handle: "sha", state: prev, created: false },
+        { path: ".kody/jobs/auto-sync.state.json", handle: "sha", state: prev, created: false },
         next,
       )
       expect(wrote).toBe(true)
@@ -170,7 +170,7 @@ describe("ContentsApiBackend", () => {
       const prev = envelope({ data: { x: 1 } })
       const next = envelope({ data: { x: 2 } })
       const wrote = backend().save(
-        { path: ".kody/missions/auto-sync.state.json", handle: "sha", state: prev, created: false },
+        { path: ".kody/jobs/auto-sync.state.json", handle: "sha", state: prev, created: false },
         next,
       )
       expect(wrote).toBe(true)

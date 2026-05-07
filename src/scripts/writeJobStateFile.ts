@@ -1,7 +1,7 @@
 /**
- * Postflight: persist ctx.data.nextMissionState via the configured
- * `MissionStateBackend`. Mirror of `writeIssueStateComment` for the
- * file-based mission model.
+ * Postflight: persist ctx.data.nextJobState via the configured
+ * `JobStateBackend`. Mirror of `writeIssueStateComment` for the
+ * file-based job model.
  *
  * Backends decide how durability works (contents-API commit, local file,
  * Actions cache, …). This script just relays prev/next; the backend skips
@@ -14,33 +14,33 @@
 
 import type { PostflightScript } from "../executables/types.js"
 import type { StateEnvelope } from "./issueStateComment.js"
-import { type LoadedMissionState, resolveBackend } from "./missionState/index.js"
+import { type LoadedJobState, resolveBackend } from "./jobState/index.js"
 
-export const writeMissionStateFile: PostflightScript = async (ctx, _profile, _agentResult, args) => {
+export const writeJobStateFile: PostflightScript = async (ctx, _profile, _agentResult, args) => {
   const parseError = ctx.data.nextStateParseError as string | undefined
   if (parseError) {
-    process.stderr.write(`[kody] mission state write skipped: ${parseError}\n`)
+    process.stderr.write(`[kody] job state write skipped: ${parseError}\n`)
     if (ctx.output.exitCode === 0) ctx.output.exitCode = 1
     if (!ctx.output.reason) ctx.output.reason = `next-state parse failed: ${parseError}`
     return
   }
 
-  const next = ctx.data.nextMissionState as StateEnvelope | undefined
+  const next = ctx.data.nextJobState as StateEnvelope | undefined
   if (!next) {
     // Agent emitted nothing new; leave the state alone.
     return
   }
 
-  const loaded = ctx.data.missionState as LoadedMissionState | undefined
+  const loaded = ctx.data.jobState as LoadedJobState | undefined
   if (!loaded) {
-    throw new Error("writeMissionStateFile: ctx.data.missionState missing — preflight must run first")
+    throw new Error("writeJobStateFile: ctx.data.jobState missing — preflight must run first")
   }
 
   // Backend selection mirrors the preflight load. We re-resolve here rather
   // than pass through ctx.data because the backend is cheap to construct
   // and stateless per-tick (lifecycle state lives on the dispatcher's
-  // single instance — see dispatchMissionFileTicks).
-  const missionsDir = String(args?.missionsDir ?? ".kody/missions")
-  const backend = resolveBackend({ config: ctx.config, cwd: ctx.cwd, missionsDir })
+  // single instance — see dispatchJobFileTicks).
+  const jobsDir = String(args?.jobsDir ?? ".kody/jobs")
+  const backend = resolveBackend({ config: ctx.config, cwd: ctx.cwd, jobsDir })
   await backend.save(loaded, next)
 }

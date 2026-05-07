@@ -1,60 +1,60 @@
 /**
- * Preflight: enumerate `.kody/missions/<slug>.md` files in the cwd, then
- * invoke a target executable once per mission slug (in-process, sequentially).
+ * Preflight: enumerate `.kody/jobs/<slug>.md` files in the cwd, then
+ * invoke a target executable once per job slug (in-process, sequentially).
  *
- * Replaces the issue-label discovery in `dispatchMissionTicks` with file
- * discovery — missions live as authored markdown in the repo, not as issues.
+ * Replaces the issue-label discovery in `dispatchJobTicks` with file
+ * discovery — jobs live as authored markdown in the repo, not as issues.
  *
- * Wraps the fan-out in the configured `MissionStateBackend` lifecycle:
+ * Wraps the fan-out in the configured `JobStateBackend` lifecycle:
  * `hydrate` runs once before any tick, `persist` runs once after every
  * tick (even on failure, in a finally block). Backends that are always
  * live (contents-API) leave both as no-ops; backends that snapshot the
- * mission directory (local-file + Actions cache) implement them.
+ * job directory (local-file + Actions cache) implement them.
  *
  * Script args (via `with:`):
- *   missionsDir        optional — relative path under cwd (default ".kody/missions")
- *   targetExecutable   required — e.g. "mission-tick"
- *   slugArg            optional — CLI input name on the target (default "mission")
+ *   jobsDir        optional — relative path under cwd (default ".kody/jobs")
+ *   targetExecutable   required — e.g. "job-tick"
+ *   slugArg            optional — CLI input name on the target (default "job")
  */
 
 import * as fs from "node:fs"
 import * as path from "node:path"
 import type { PreflightScript } from "../executables/types.js"
 import { runExecutable } from "../executor.js"
-import { resolveBackend } from "./missionState/index.js"
+import { resolveBackend } from "./jobState/index.js"
 
-export const dispatchMissionFileTicks: PreflightScript = async (ctx, _profile, args) => {
+export const dispatchJobFileTicks: PreflightScript = async (ctx, _profile, args) => {
   ctx.skipAgent = true
 
   const targetExecutable = String(args?.targetExecutable ?? "")
   if (!targetExecutable) {
-    throw new Error("dispatchMissionFileTicks: `with.targetExecutable` is required")
+    throw new Error("dispatchJobFileTicks: `with.targetExecutable` is required")
   }
-  const missionsDir = String(args?.missionsDir ?? ".kody/missions")
-  const slugArg = String(args?.slugArg ?? "mission")
+  const jobsDir = String(args?.jobsDir ?? ".kody/jobs")
+  const slugArg = String(args?.slugArg ?? "job")
 
   // Resolve once, hydrate once, persist once. Per-tick scripts re-resolve
   // for their own load/save calls — backends are cheap to construct, but
   // hydrate/persist must happen exactly once per workflow run.
-  const backend = resolveBackend({ config: ctx.config, cwd: ctx.cwd, missionsDir })
+  const backend = resolveBackend({ config: ctx.config, cwd: ctx.cwd, jobsDir })
   if (backend.hydrate) {
     await backend.hydrate()
   }
 
   try {
-    const slugs = listMissionSlugs(path.join(ctx.cwd, missionsDir))
-    ctx.data.missionSlugCount = slugs.length
+    const slugs = listJobSlugs(path.join(ctx.cwd, jobsDir))
+    ctx.data.jobSlugCount = slugs.length
 
     if (slugs.length === 0) {
-      process.stdout.write(`[missions] no mission files in ${missionsDir}\n`)
+      process.stdout.write(`[jobs] no job files in ${jobsDir}\n`)
       return
     }
 
-    process.stdout.write(`[missions] ticking ${slugs.length} mission(s) via ${targetExecutable}\n`)
+    process.stdout.write(`[jobs] ticking ${slugs.length} job(s) via ${targetExecutable}\n`)
 
     const results: Array<{ slug: string; exitCode: number; reason?: string }> = []
     for (const slug of slugs) {
-      process.stdout.write(`[missions] → tick ${slug}\n`)
+      process.stdout.write(`[jobs] → tick ${slug}\n`)
       try {
         const out = await runExecutable(targetExecutable, {
           cliArgs: { [slugArg]: slug },
@@ -65,16 +65,16 @@ export const dispatchMissionFileTicks: PreflightScript = async (ctx, _profile, a
         })
         results.push({ slug, exitCode: out.exitCode, reason: out.reason })
         if (out.exitCode !== 0) {
-          process.stderr.write(`[missions] tick ${slug} failed (exit ${out.exitCode}): ${out.reason ?? ""}\n`)
+          process.stderr.write(`[jobs] tick ${slug} failed (exit ${out.exitCode}): ${out.reason ?? ""}\n`)
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        process.stderr.write(`[missions] tick ${slug} crashed: ${msg}\n`)
+        process.stderr.write(`[jobs] tick ${slug} crashed: ${msg}\n`)
         results.push({ slug, exitCode: 99, reason: msg })
       }
     }
 
-    ctx.data.missionTickResults = results
+    ctx.data.jobTickResults = results
     // Scheduler always exits 0 — individual tick failures are reported per-slug
     // in stderr but don't fail the cron job.
     ctx.output.exitCode = 0
@@ -87,13 +87,13 @@ export const dispatchMissionFileTicks: PreflightScript = async (ctx, _profile, a
         await backend.persist()
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        process.stderr.write(`[missions] backend persist failed: ${msg}\n`)
+        process.stderr.write(`[jobs] backend persist failed: ${msg}\n`)
       }
     }
   }
 }
 
-function listMissionSlugs(absDir: string): string[] {
+function listJobSlugs(absDir: string): string[] {
   if (!fs.existsSync(absDir)) return []
   let entries: fs.Dirent[]
   try {

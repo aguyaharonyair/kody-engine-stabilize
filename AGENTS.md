@@ -129,26 +129,26 @@ Writes `kody.config.json` (with package-manager-aware `quality.*` commands and o
 
 `kind: scheduled` with cron `0 8 * * MON`. `kody init` auto-generates `.github/workflows/kody-watch-stale-prs.yml` to drive it. Lists open PRs untouched for N days and posts a summary issue. No agent — all deterministic.
 
-### `mission-scheduler` + `mission-tick` — zero-code coordinator for issue-scoped missions
+### `job-scheduler` + `job-tick` — zero-code coordinator for issue-scoped jobs
 
-A two-executable pair that lets a consumer define a stateful goal *as a GitHub issue* — no per-mission code, no PR to kody, no deploy. Used for release pipelines, test-suite orchestration, pr-fleet supervision, or any multi-step flow that spans GitHub events.
+A two-executable pair that lets a consumer define a stateful goal *as a GitHub issue* — no per-job code, no PR to kody, no deploy. Used for release pipelines, test-suite orchestration, pr-fleet supervision, or any multi-step flow that spans GitHub events.
 
-**Terminology.** A **mission** is a stateful, bounded goal expressed as a labeled GitHub issue. A **watch** is a stateless repeating loop (same action every tick). A **manager** is just a mission whose job happens to be overseeing other missions — same primitive, different prose. All three run on the same scheduled-executable substrate.
+**Terminology.** A **job** is a stateful, bounded goal expressed as a labeled GitHub issue. A **watch** is a stateless repeating loop (same action every tick). A **manager** is just a job whose job happens to be overseeing other jobs — same primitive, different prose. All three run on the same scheduled-executable substrate.
 
-**The model.** Open an issue, apply the `kody:mission` label, write the goal as free prose in the description. On every cron wake the scheduler finds the issue, ticks it, and the tick may spawn other kody runs (`gh workflow run …`) or wait on in-flight child runs. `done: true` in state OR closing the issue stops future work.
+**The model.** Open an issue, apply the `kody:job` label, write the goal as free prose in the description. On every cron wake the scheduler finds the issue, ticks it, and the tick may spawn other kody runs (`gh workflow run …`) or wait on in-flight child runs. `done: true` in state OR closing the issue stops future work.
 
-- **`mission-scheduler`** — `kind: scheduled` (default cron `*/5 * * * *`, `role: "watch"`). No agent. Preflight is `dispatchMissionTicks`, which lists every open `kody:mission` issue and invokes `mission-tick` once per issue in-process.
-- **`mission-tick`** — `kind: oneshot`, one required input `--issue N`. Reads two things: the issue body (the mission, human-owned prose) and a dedicated state comment (JSON, bot-owned, minimized via GraphQL so it's collapsed in the UI). Agent decides the next step using only `gh` + `Read`; it never edits the working tree. At the end of its turn it emits a fenced `kody-mission-next-state` block with `{ cursor, data, done }`, which the postflight persists back to the state comment (with auto-bumped `rev`).
+- **`job-scheduler`** — `kind: scheduled` (default cron `*/5 * * * *`, `role: "watch"`). No agent. Preflight is `dispatchJobTicks`, which lists every open `kody:job` issue and invokes `job-tick` once per issue in-process.
+- **`job-tick`** — `kind: oneshot`, one required input `--issue N`. Reads two things: the issue body (the job, human-owned prose) and a dedicated state comment (JSON, bot-owned, minimized via GraphQL so it's collapsed in the UI). Agent decides the next step using only `gh` + `Read`; it never edits the working tree. At the end of its turn it emits a fenced `kody-job-next-state` block with `{ cursor, data, done }`, which the postflight persists back to the state comment (with auto-bumped `rev`).
 
-**The state-comment convention.** `src/scripts/issueStateComment.ts` defines the primitive: one comment per marker per issue, body starts with `<!-- <marker> -->` then a `json` fenced block with `{ version: 1, rev, cursor, data, done }`. `loadIssueStateComment` / `writeIssueStateComment` are registered generic pre/postflight scripts parameterized by `with.marker` — any future stateful executable (not just missions) can reuse them.
+**The state-comment convention.** `src/scripts/issueStateComment.ts` defines the primitive: one comment per marker per issue, body starts with `<!-- <marker> -->` then a `json` fenced block with `{ version: 1, rev, cursor, data, done }`. `loadIssueStateComment` / `writeIssueStateComment` are registered generic pre/postflight scripts parameterized by `with.marker` — any future stateful executable (not just jobs) can reuse them.
 
-**Intent vs. state separation.** The issue description is 100% human-owned. Humans edit prose to steer the mission (extend a deadline, widen scope, abort). The bot never touches the description. State lives exclusively in the minimized state comment. Two fields, two owners, no collisions.
+**Intent vs. state separation.** The issue description is 100% human-owned. Humans edit prose to steer the job (extend a deadline, widen scope, abort). The bot never touches the description. State lives exclusively in the minimized state comment. Two fields, two owners, no collisions.
 
 **Spawning children.** A tick spawns other kody runs via `gh workflow run kody.yml -f issue_number=<N>`. Works without a PAT because `workflow_dispatch` isn't subject to GitHub's anti-recursion safety on the default `GITHUB_TOKEN` — that's why we prefer it over posting `@kody` comments (which would silently not trigger a child run).
 
-**Trigger routing.** `src/dispatch.ts` routes `schedule` events and empty `workflow_dispatch` to `mission-scheduler`, so consumers add exactly one line (`schedule: - cron:`) to their existing single `kody.yml`. No per-capability workflow files.
+**Trigger routing.** `src/dispatch.ts` routes `schedule` events and empty `workflow_dispatch` to `job-scheduler`, so consumers add exactly one line (`schedule: - cron:`) to their existing single `kody.yml`. No per-capability workflow files.
 
-**Scale.** Fan-out is sequential in-process (`dispatchMissionTicks` calls `runExecutable("mission-tick", ...)` per issue). Fine for small N; if a consumer ever runs many missions simultaneously, swap to `gh workflow run` dispatch for parallelism. Scheduler itself always exits 0 — individual tick failures surface on the owning issue, not as a cron failure.
+**Scale.** Fan-out is sequential in-process (`dispatchJobTicks` calls `runExecutable("job-tick", ...)` per issue). Fine for small N; if a consumer ever runs many jobs simultaneously, swap to `gh workflow run` dispatch for parallelism. Scheduler itself always exits 0 — individual tick failures surface on the owning issue, not as a cron failure.
 
 ### `memorize` — scheduled vault wiki
 
@@ -159,7 +159,7 @@ A two-executable pair that lets a consumer define a stateful goal *as a GitHub i
 - **Path allowlist.** `commitAndPush`'s forbidden-path filter blocks `.kody/` to keep agents out of runtime state during `run`/`fix`/`resolve`. `isForbiddenPath` carries a narrow allowlist for `.kody/vault/` so memorize's writes survive staging. Other `.kody/*` paths remain blocked.
 - **PR creation.** `ensureMemorizePr` opens (or updates) a PR titled `kody memorize: vault update YYYY-MM-DD`. No issue coupling, never marked draft. Refuses to call `gh pr create` when `commitAndPush` reports `pushed: false` — `hasCommitsAhead` can return true on an orphaned local commit, which previously crashed PR creation with "Head ref must be a branch".
 - **Consumer gitignore.** Repos that ignore `.kody/*` must un-ignore the vault: `!.kody/vault/` + `!.kody/vault/**`. Without it, the agent's writes are filtered out by git itself before staging.
-- **Trigger.** Same scheduled fan-out as missions — `dispatchScheduledWatches` picks up any `role: "watch"`, `kind: "scheduled"` profile whose cron matches the wake window.
+- **Trigger.** Same scheduled fan-out as jobs — `dispatchScheduledWatches` picks up any `role: "watch"`, `kind: "scheduled"` profile whose cron matches the wake window.
 
 ### `plan-verify` — live-test harness for plugin wiring
 

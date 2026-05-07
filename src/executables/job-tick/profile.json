@@ -1,15 +1,15 @@
 {
-  "name": "mission-tick",
+  "name": "job-tick",
   "role": "primitive",
-  "describe": "One classifier tick for one mission file: read intent + state, decide and execute via gh, emit next state.",
+  "describe": "One classifier tick for one job file: read intent + state, decide and execute via gh, emit next state.",
   "kind": "oneshot",
   "inputs": [
     {
-      "name": "mission",
-      "flag": "--mission",
+      "name": "job",
+      "flag": "--job",
       "type": "string",
       "required": true,
-      "describe": "Mission slug — basename (without .md) of the file under .kody/missions/."
+      "describe": "Job slug — basename (without .md) of the file under .kody/jobs/."
     }
   ],
   "claudeCode": {
@@ -43,10 +43,10 @@
   "scripts": {
     "preflight": [
       {
-        "script": "loadMissionFromFile",
+        "script": "loadJobFromFile",
         "with": {
-          "missionsDir": ".kody/missions",
-          "slugArg": "mission"
+          "jobsDir": ".kody/jobs",
+          "slugArg": "job"
         }
       },
       {
@@ -55,13 +55,13 @@
     ],
     "postflight": [
       {
-        "script": "parseMissionStateFromAgentResult",
+        "script": "parseJobStateFromAgentResult",
         "with": {
-          "fenceLabel": "kody-mission-next-state"
+          "fenceLabel": "kody-job-next-state"
         }
       },
       {
-        "script": "writeMissionStateFile"
+        "script": "writeJobStateFile"
       }
     ]
   }

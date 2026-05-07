@@ -1,7 +1,7 @@
 /**
- * Contents-API backend: durable mission state in tracked repo files.
+ * Contents-API backend: durable job state in tracked repo files.
  *
- * One file per mission at `<missionsDir>/<slug>.state.json`. Reads and
+ * One file per job at `<jobsDir>/<slug>.state.json`. Reads and
  * writes go through the GitHub Contents API, so the default GITHUB_TOKEN
  * (with `contents: write`) is sufficient — no PAT or `gist` scope.
  *
@@ -16,8 +16,8 @@ import { gh } from "../../issue.js"
 import { initialStateEnvelope, isStateEnvelope, type StateEnvelope } from "../issueStateComment.js"
 import {
   isStateUnchanged,
-  type LoadedMissionState,
-  type MissionStateBackend,
+  type LoadedJobState,
+  type JobStateBackend,
   slugFromStateFilePath,
   stateFilePath,
 } from "./backend.js"
@@ -33,16 +33,16 @@ interface ContentsResponse {
 export interface ContentsApiBackendOptions {
   owner: string
   repo: string
-  missionsDir: string
+  jobsDir: string
   cwd?: string
 }
 
-export class ContentsApiBackend implements MissionStateBackend {
+export class ContentsApiBackend implements JobStateBackend {
   readonly name = "contents-api"
 
   private readonly owner: string
   private readonly repo: string
-  private readonly missionsDir: string
+  private readonly jobsDir: string
   private readonly cwd?: string
 
   constructor(opts: ContentsApiBackendOptions) {
@@ -51,12 +51,12 @@ export class ContentsApiBackend implements MissionStateBackend {
     }
     this.owner = opts.owner
     this.repo = opts.repo
-    this.missionsDir = opts.missionsDir
+    this.jobsDir = opts.jobsDir
     this.cwd = opts.cwd
   }
 
-  load(slug: string): LoadedMissionState {
-    const filePath = stateFilePath(this.missionsDir, slug)
+  load(slug: string): LoadedJobState {
+    const filePath = stateFilePath(this.jobsDir, slug)
     let raw = ""
     try {
       raw = gh(["api", `/repos/${this.owner}/${this.repo}/contents/${filePath}`], { cwd: this.cwd })
@@ -95,7 +95,7 @@ export class ContentsApiBackend implements MissionStateBackend {
     return { path: filePath, handle: o.sha, state: envelope, created: false }
   }
 
-  save(loaded: LoadedMissionState, next: StateEnvelope): boolean {
+  save(loaded: LoadedJobState, next: StateEnvelope): boolean {
     // Idempotency: skip the commit when the agent's state is byte-identical
     // to what's already on disk. The rev still bumps client-side, but a
     // no-action tick means cursor and data are unchanged — don't write.
@@ -106,7 +106,7 @@ export class ContentsApiBackend implements MissionStateBackend {
     const slug = slugFromStateFilePath(loaded.path)
     const body = JSON.stringify(next, null, 2) + "\n"
     const payload: Record<string, unknown> = {
-      message: `chore(missions): update state for ${slug} (rev ${next.rev})`,
+      message: `chore(jobs): update state for ${slug} (rev ${next.rev})`,
       content: Buffer.from(body, "utf-8").toString("base64"),
     }
     // `handle` is the prior blob SHA (set by `load` after a real read,

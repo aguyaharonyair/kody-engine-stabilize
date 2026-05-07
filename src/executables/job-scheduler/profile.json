@@ -1,7 +1,7 @@
 {
-  "name": "mission-scheduler",
+  "name": "job-scheduler",
   "role": "watch",
-  "describe": "Scheduled: for every mission file under .kody/missions/, invoke mission-tick once. No agent on the scheduler itself.",
+  "describe": "Scheduled: for every job file under .kody/jobs/, invoke job-tick once. No agent on the scheduler itself.",
   "kind": "scheduled",
   "schedule": "*/5 * * * *",
   "inputs": [],
@@ -36,11 +36,11 @@
   "scripts": {
     "preflight": [
       {
-        "script": "dispatchMissionFileTicks",
+        "script": "dispatchJobFileTicks",
         "with": {
-          "missionsDir": ".kody/missions",
-          "targetExecutable": "mission-tick",
-          "slugArg": "mission"
+          "jobsDir": ".kody/jobs",
+          "targetExecutable": "job-tick",
+          "slugArg": "job"
         }
       }
     ],

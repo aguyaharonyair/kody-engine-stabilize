@@ -245,7 +245,7 @@ export async function runCi(argv: string[]): Promise<number> {
   // Schedule wakes and parameterless workflow_dispatch fan out to every
   // watch executable whose `schedule` cron matches the wake window
   // (workflow_dispatch ignores the cron — it's an explicit "fire all").
-  // mission-scheduler is itself a watch and continues to fire from this
+  // job-scheduler is itself a watch and continues to fire from this
   // path; nightly suites and any future watch executables join naturally,
   // no kody.yml or config edits.
   const eventName = process.env.GITHUB_EVENT_NAME

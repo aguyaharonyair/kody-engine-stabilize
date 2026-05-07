@@ -51,7 +51,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   // No verb: auto-route by env so the consumer workflow can invoke a bare
   // `kody` instead of branching in shell. SESSION_ID is the chat signal
   // (wired from the dashboard's workflow_dispatch input); otherwise fall
-  // through to ci for agent/mission/pull_request/schedule triggers.
+  // through to ci for agent/job/pull_request/schedule triggers.
   if (argv.length === 0) {
     if (process.env.SESSION_ID) return { ...result, command: "chat", chatArgv: [] }
     if (process.env.GITHUB_EVENT_NAME) return { ...result, command: "ci", ciArgv: [] }
