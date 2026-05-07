@@ -172,22 +172,78 @@ function findNextUserTurn(turns: ReturnType<typeof readSession>, fromIdx: number
   return -1
 }
 
+/**
+ * Commit + push the chat session/events files. Robust against concurrent
+ * pushes to the same branch: on a non-fast-forward rejection, fetch,
+ * rebase the runner's commit on top of origin, and retry the push.
+ *
+ * Why this matters: when the dashboard's user-turn append (Contents API)
+ * races the runner's chat.message commit, OR when two interactive
+ * sessions push to the same branch back-to-back, the second push gets
+ * rejected. Without retry the events file never reaches origin and the
+ * dashboard's poll sees nothing forever.
+ */
 function commitTurn(cwd: string, sessionId: string, verbose: boolean): void {
   const sessionRel = path.relative(cwd, sessionFilePath(cwd, sessionId))
   const eventsRel = path.relative(cwd, eventsFilePath(cwd, sessionId))
   const paths = [sessionRel, eventsRel].filter((p) => fs.existsSync(path.join(cwd, p)))
   if (paths.length === 0) return
   const stdio = verbose ? "inherit" : "pipe"
+  const exec = (args: string[]) => execFileSync("git", args, { cwd, stdio })
+
+  // Stage + commit. `-f` because consumer repos sometimes gitignore .kody/*.
   try {
-    // -f: same rationale as chat-cli's commitChatFiles — .kody/* may be
-    // gitignored in consumer repos, but the dashboard's durable fallback
-    // depends on these files reaching origin.
-    execFileSync("git", ["add", "-f", ...paths], { cwd, stdio })
-    execFileSync("git", ["commit", "--quiet", "-m", `chat: interactive turn for ${sessionId}`], { cwd, stdio })
-    execFileSync("git", ["push", "--quiet", "origin", "HEAD"], { cwd, stdio })
+    exec(["add", "-f", ...paths])
+    exec(["commit", "--quiet", "-m", `chat: interactive turn for ${sessionId}`])
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    process.stderr.write(`[kody:chat:interactive] commit/push skipped: ${msg}\n`)
+    process.stderr.write(`[kody:chat:interactive] commit failed: ${msg}\n`)
+    return
+  }
+
+  // Push, retrying on non-fast-forward by fetch + rebase + push. Up to 3
+  // attempts so a contended branch with multiple concurrent writers
+  // eventually settles instead of dropping the events file.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      exec(["push", "--quiet", "origin", "HEAD"])
+      return // pushed successfully
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      const isNonFf = /non-fast-forward|fetch first|rejected/i.test(msg)
+      if (!isNonFf || attempt === 3) {
+        process.stderr.write(`[kody:chat:interactive] push failed (attempt ${attempt}): ${msg}\n`)
+        return
+      }
+      process.stderr.write(`[kody:chat:interactive] push rejected (attempt ${attempt}); fetch+rebase+retry\n`)
+      try {
+        exec(["fetch", "--quiet", "origin"])
+        const branch = currentBranch(cwd)
+        if (branch) {
+          exec(["rebase", "--quiet", `origin/${branch}`])
+        } else {
+          // Detached HEAD or unresolved branch — bail rather than guess.
+          process.stderr.write(`[kody:chat:interactive] cannot rebase: no current branch\n`)
+          return
+        }
+      } catch (rebaseErr) {
+        const rmsg = rebaseErr instanceof Error ? rebaseErr.message : String(rebaseErr)
+        process.stderr.write(`[kody:chat:interactive] rebase failed: ${rmsg}\n`)
+        return
+      }
+    }
+  }
+}
+
+function currentBranch(cwd: string): string | null {
+  try {
+    const out = execFileSync("git", ["symbolic-ref", "--short", "HEAD"], {
+      cwd,
+      stdio: ["ignore", "pipe", "ignore"],
+    })
+    return out.toString("utf-8").trim() || null
+  } catch {
+    return null
   }
 }
 
