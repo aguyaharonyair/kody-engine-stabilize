@@ -125,8 +125,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
   const cwd = args.cwd ?? process.cwd()
 
-  // init runs BEFORE a kody.config.json exists — tell the executor to skip config load.
-  const configlessCommands = new Set(["init"])
+  // Configless executables: skip config load.
+  // - init runs BEFORE a kody.config.json exists.
+  // - goal-tick / goal-scheduler are lifecycle tools that only touch state
+  //   files + the gh CLI; they never use config.quality / config.git etc.
+  //   Requiring kody.config.json would force every consumer repo to install
+  //   a "real" Kody config just to run the goal runner, which we don't want.
+  const configlessCommands = new Set(["init", "goal-tick", "goal-scheduler"])
   const skipConfig = configlessCommands.has(args.executableName ?? "")
 
   try {
