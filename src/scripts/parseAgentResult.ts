@@ -37,9 +37,18 @@ export const parseAgentResult: PostflightScript = async (ctx, profile, agentResu
       commitMessage: parsed.commitMessage,
     })
   } else {
-    ctx.data.action = makeAction(`${modeSeg}_FAILED`, {
-      reason: parsed.failureReason || agentResult.error || "unknown failure",
-    })
+    // Prefer the SDK's own error over the parser's generic "no final
+    // message" diagnostic when both are present — the SDK error names the
+    // *actual* failure (MCP startup crash, model 5xx, auth, etc.), whereas
+    // "no final message" is the symptom. Without this, an agent that
+    // crashed before emitting any text shows up as a content failure,
+    // hiding the real cause from the state comment.
+    const isGenericNoOutput = parsed.failureReason === "agent produced no final message"
+    const reason =
+      isGenericNoOutput && agentResult.error
+        ? `agent SDK error: ${agentResult.error}`
+        : parsed.failureReason || agentResult.error || "unknown failure"
+    ctx.data.action = makeAction(`${modeSeg}_FAILED`, { reason })
   }
 }
 
