@@ -60,13 +60,15 @@ label="goal:${goal_id}"
 dispatched_label="goal-runner:dispatched"
 
 # Fetch up to 100 goal-labelled issues. 100 is a soft ceiling — if a goal
-# grows past that, we'll need pagination. Surface as a warning and proceed
-# with the first page.
-issues_json=$(gh issue list \
-  --label "$label" \
-  --state all \
-  --limit 100 \
-  --json number,state,labels)
+# grows past that, we'll need pagination.
+#
+# Use `gh api` (not `gh issue list --label`) because the latter chokes on
+# colons in label names, which is exactly the convention used here
+# (`goal:<id>` etc). `gh api` also lets us filter PRs out cleanly via the
+# `pull_request` field GitHub attaches to issue payloads.
+issues_json=$(gh api \
+  "repos/{owner}/{repo}/issues?labels=${label}&state=all&per_page=100" \
+  --jq '[.[] | select(.pull_request == null) | {number, state: (.state | ascii_upcase), labels: .labels}]')
 
 total=$(echo "$issues_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
 if [ "$total" = "0" ]; then
