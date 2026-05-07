@@ -146,9 +146,9 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     }
   })
 
-  it.each(["feature", "spec"])("`%s` sub-orchestrator profile loads cleanly", (name) => {
-    const profile = loadProfile(path.join(EXE_ROOT, `${name}/profile.json`))
-    expect(profile.name).toBe(name)
+  it("`spec` sub-orchestrator profile loads cleanly", () => {
+    const profile = loadProfile(path.join(EXE_ROOT, "spec/profile.json"))
+    expect(profile.name).toBe("spec")
     expect(profile.inputs.map((i) => i.name)).toEqual(["issue"])
     expect(profile.claudeCode.maxTurns).toBe(0)
     const pre = profile.scripts.preflight.map((p) => p.script)
@@ -159,9 +159,18 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     expect(post.at(-1)!.script).toBe("persistFlowState")
   })
 
-  it("`chore` container profile loads cleanly with children routing table", () => {
-    const profile = loadProfile(path.join(EXE_ROOT, "chore/profile.json"))
-    expect(profile.name).toBe("chore")
+  it.each([
+    {
+      name: "chore",
+      childExecs: ["run", "review", "fix"],
+    },
+    {
+      name: "feature",
+      childExecs: ["research", "plan", "run", "review", "fix"],
+    },
+  ])("`$name` container profile loads cleanly with children routing table", ({ name, childExecs }) => {
+    const profile = loadProfile(path.join(EXE_ROOT, `${name}/profile.json`))
+    expect(profile.name).toBe(name)
     expect(profile.role).toBe("container")
     expect(profile.inputs.map((i) => i.name)).toEqual(["issue"])
     expect(profile.claudeCode.maxTurns).toBe(0)
@@ -169,8 +178,8 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     expect(pre[0]).toBe("setLifecycleLabel")
     expect(pre).toContain("loadIssueContext")
     expect(pre).toContain("loadTaskState")
-    const childExecs = (profile.children ?? []).map((c) => c.exec)
-    expect(childExecs).toEqual(["run", "review", "fix"])
+    const actualChildren = (profile.children ?? []).map((c) => c.exec)
+    expect(actualChildren).toEqual(childExecs)
     const post = profile.scripts.postflight
     expect(post.at(-1)!.script).toBe("persistFlowState")
     for (const entry of post.slice(0, -1)) {
@@ -181,14 +190,8 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
   })
 
   it("each sub-orchestrator's startFlow points at the expected entry stage", () => {
-    const entries: Record<string, string> = {
-      feature: "research",
-      spec: "research",
-    }
-    for (const [name, expectedEntry] of Object.entries(entries)) {
-      const profile = loadProfile(path.join(EXE_ROOT, `${name}/profile.json`))
-      const startEntry = profile.scripts.postflight.find((p) => p.script === "startFlow")
-      expect(startEntry?.with?.entry).toBe(expectedEntry)
-    }
+    const profile = loadProfile(path.join(EXE_ROOT, "spec/profile.json"))
+    const startEntry = profile.scripts.postflight.find((p) => p.script === "startFlow")
+    expect(startEntry?.with?.entry).toBe("research")
   })
 })
