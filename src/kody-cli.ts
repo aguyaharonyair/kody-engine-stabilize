@@ -138,10 +138,24 @@ function isOnPath(bin: string): boolean {
   }
 }
 
+// Pin a known-good major when bootstrapping a missing package manager.
+// `npm install -g pnpm` (unpinned) fetches whatever's "latest" on npm,
+// which on 2026-05-07 is pnpm 11 — incompatible with the engines.pnpm
+// constraint (^9 || ^10) shipped by most consumer repos. Pin to the
+// last known-good major; consumers that need newer can install pnpm
+// themselves and skip this branch.
+const PM_BOOTSTRAP_VERSION: Record<PackageManager, string> = {
+  pnpm: "10",
+  yarn: "1",
+  bun: "1",
+  npm: "latest",
+}
+
 export function ensurePackageManagerInstalled(pm: PackageManager, cwd: string): number {
   if (pm === "npm" || isOnPath(pm)) return 0
-  process.stdout.write(`→ kody: ${pm} not on PATH — installing via npm install -g ${pm}\n`)
-  return shellOut("npm", ["install", "-g", pm], cwd)
+  const spec = `${pm}@${PM_BOOTSTRAP_VERSION[pm]}`
+  process.stdout.write(`→ kody: ${pm} not on PATH — installing via npm install -g ${spec}\n`)
+  return shellOut("npm", ["install", "-g", spec], cwd)
 }
 
 export function installDeps(pm: PackageManager, cwd: string): number {
