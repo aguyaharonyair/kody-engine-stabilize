@@ -205,13 +205,27 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
   }
 
   // Primary signal: bare-word DONE line (with optional markdown decorators).
-  // Fallback signal: a parseable COMMIT_MSG: marker — the structured
-  // artifact the downstream ensurePr step actually consumes. Weaker
-  // models sometimes drop the sentinel but still produce the contract
-  // fields; if they did, treat the session as complete.
+  // Fallback signals (in order):
+  //   1. COMMIT_MSG: marker — the structured artifact ensurePr consumes.
+  //   2. PR_SUMMARY: marker — the artifact reviewers actually read.
+  // Weaker models sometimes drop the bare DONE sentinel but still emit
+  // one of the contract fields. If any of them is present, treat the
+  // session as complete — refusing to ship work the agent already did
+  // because of a missing five-letter sentinel is the worst-of-both
+  // outcomes (we paid for the run, then threw away the result).
   const hasDoneMarker = DONE_RE.test(text)
   const hasCommitMsg = /^[\s>*_#`~-]*COMMIT_MSG\s*:/im.test(text)
-  if (!hasDoneMarker && !hasCommitMsg) {
+  const hasPrSummary = /^[\s>*_#`~-]*PR_SUMMARY\s*:/im.test(text)
+  if (!hasDoneMarker && !hasCommitMsg && !hasPrSummary) {
+    // Surface the last chunk of agent text so the state comment shows
+    // *what* the agent actually produced. Otherwise we'd just see
+    // "no DONE or FAILED marker" with no diagnostic — making it
+    // impossible to tell if the model is silently giving up, getting
+    // truncated by a length cap, or emitting some near-miss sentinel
+    // we should add to the parser. 400 chars fits within the 1500-char
+    // failure-comment cap and the 120-char history-line cap (truncated
+    // separately at render time).
+    const tail = text.length > 400 ? `…${text.slice(-400)}` : text
     return {
       done: false,
       commitMessage: "",
@@ -219,7 +233,7 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
       feedbackActions: "",
       planDeviations: "",
       priorArt: "",
-      failureReason: "no DONE or FAILED marker in agent output",
+      failureReason: `no DONE or FAILED marker in agent output — agent tail: ${tail}`,
     }
   }
 
