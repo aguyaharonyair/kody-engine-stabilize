@@ -41,8 +41,10 @@ for state_file in "${state_files[@]}"; do
   active=$((active + 1))
   echo "[goal-scheduler] → tick $goal_id"
 
-  # Run the tick in a subshell so a non-zero exit doesn't kill the loop.
-  if ! kody dispatch goal-tick --goal "$goal_id"; then
+  # Run the tick. Top-level kody invocation is `kody <executable>` —
+  # there's no `dispatch` subcommand. A non-zero exit logs and continues
+  # so one stuck goal doesn't starve the rest of the schedule.
+  if ! kody goal-tick --goal "$goal_id"; then
     echo "[goal-scheduler] tick $goal_id failed (continuing)"
   fi
 done
