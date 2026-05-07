@@ -1,7 +1,7 @@
 {
   "name": "bug",
-  "role": "orchestrator",
-  "describe": "Sub-orchestrator for bug / enhancement issues — plan → run → review (→ fix on concerns/fail). No agent — the postflight entries ARE the transition table, evaluated top-to-bottom via runWhen.",
+  "role": "container",
+  "describe": "Bug / enhancement flow — reproduce → plan → run → review (→ fix on concerns/fail). Children run sequentially in one process via the container loop.",
   "inputs": [
     {
       "name": "issue",
@@ -45,32 +45,20 @@
         }
       },
       { "script": "loadIssueContext" },
-      { "script": "loadTaskState" },
-      { "script": "skipAgent" }
+      { "script": "loadTaskState" }
     ],
     "postflight": [
-      { "script": "startFlow", "with": { "entry": "plan", "target": "issue" } },
-
-      { "script": "dispatch", "with": { "next": "run", "target": "issue" },
-        "runWhen": { "data.taskState.core.lastOutcome.type": "PLAN_COMPLETED" } },
-
-      { "script": "dispatch", "with": { "next": "review", "target": "pr" },
-        "runWhen": { "data.taskState.core.lastOutcome.type": "RUN_COMPLETED" } },
-
       { "script": "finishFlow",
         "with": { "reason": "review-passed", "label": "kody:done", "color": "0e8a16", "description": "kody: PR ready for human review/merge" },
         "runWhen": { "data.taskState.core.lastOutcome.type": "REVIEW_PASS" } },
 
-      { "script": "dispatch", "with": { "next": "fix", "target": "pr" },
-        "runWhen": { "data.taskState.core.lastOutcome.type": ["REVIEW_CONCERNS", "REVIEW_FAIL"] } },
+      { "script": "finishFlow",
+        "with": { "reason": "fix-applied", "label": "kody:done", "color": "0e8a16", "description": "kody: PR ready for human review/merge" },
+        "runWhen": { "data.taskState.core.lastOutcome.type": "FIX_COMPLETED" } },
 
       { "script": "finishFlow",
         "with": { "reason": "review-failed", "label": "kody:failed", "color": "e11d21", "description": "kody: flow failed" },
         "runWhen": { "data.taskState.core.lastOutcome.type": "REVIEW_FAILED" } },
-
-      { "script": "finishFlow",
-        "with": { "reason": "fix-applied", "label": "kody:done", "color": "0e8a16", "description": "kody: PR ready for human review/merge" },
-        "runWhen": { "data.taskState.core.lastOutcome.type": "FIX_COMPLETED" } },
 
       { "script": "finishFlow",
         "with": { "reason": "aborted", "label": "kody:failed", "color": "e11d21", "description": "kody: flow failed" },
@@ -79,9 +67,53 @@
       { "script": "persistFlowState" }
     ]
   },
+  "children": [
+    {
+      "exec": "reproduce",
+      "target": "issue",
+      "next": {
+        "REPRODUCE_COMPLETED": "plan",
+        "REPRODUCE_FAILED": "plan",
+        "*": "abort"
+      }
+    },
+    {
+      "exec": "plan",
+      "target": "issue",
+      "next": {
+        "PLAN_COMPLETED": "run",
+        "*": "abort"
+      }
+    },
+    {
+      "exec": "run",
+      "target": "issue",
+      "next": {
+        "RUN_COMPLETED": "review",
+        "*": "abort"
+      }
+    },
+    {
+      "exec": "review",
+      "target": "pr",
+      "next": {
+        "REVIEW_PASS": "done",
+        "REVIEW_CONCERNS": "fix",
+        "REVIEW_FAIL": "fix",
+        "*": "abort"
+      }
+    },
+    {
+      "exec": "fix",
+      "target": "pr",
+      "next": {
+        "FIX_COMPLETED": "done",
+        "*": "abort"
+      }
+    }
+  ],
   "output": {
     "actionTypes": [
-      "FLOW_STARTED",
       "FLOW_COMPLETED",
       "FLOW_ABORTED"
     ]

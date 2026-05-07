@@ -121,31 +121,28 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     expect(postScripts).not.toContain("checkCoverageWithRetry")
   })
 
-  it("`bug` sub-orchestrator profile loads cleanly with transition table", () => {
+  it("`bug` container profile loads cleanly with children routing table", () => {
     const profile = loadProfile(path.join(EXE_ROOT, "bug/profile.json"))
     expect(profile.name).toBe("bug")
+    expect(profile.role).toBe("container")
     expect(profile.inputs.map((i) => i.name)).toEqual(["issue"])
     expect(profile.claudeCode.maxTurns).toBe(0)
     expect(profile.claudeCode.tools).toEqual([])
-    // Preflight ends with skipAgent so the executor bypasses runAgent.
     const pre = profile.scripts.preflight.map((p) => p.script)
     expect(pre[0]).toBe("setLifecycleLabel")
     expect(pre).toContain("loadIssueContext")
     expect(pre).toContain("loadTaskState")
-    expect(pre.at(-1)).toBe("skipAgent")
-    // Every transition entry is a dispatcher script with a `with` block.
-    // Most have runWhen guards; `startFlow` and the trailing `persistFlowState`
-    // are unconditional — startFlow is idempotent on state.flow, persistFlowState
-    // always writes.
+    // Children sequence the flow: reproduce → plan → run → review (→ fix).
+    const childExecs = (profile.children ?? []).map((c) => c.exec)
+    expect(childExecs).toEqual(["reproduce", "plan", "run", "review", "fix"])
+    // Postflight is finishFlow-only, gated on the last child's outcome.
     const post = profile.scripts.postflight
     expect(post.at(-1)!.script).toBe("persistFlowState")
-    expect(post.at(-1)!.runWhen).toBeUndefined()
     const transitions = post.slice(0, -1)
-    expect(transitions.length).toBeGreaterThanOrEqual(8)
     for (const entry of transitions) {
-      expect(["startFlow", "dispatch", "finishFlow"]).toContain(entry.script)
+      expect(entry.script).toBe("finishFlow")
       expect(entry.with).toBeDefined()
-      if (entry.script !== "startFlow") expect(entry.runWhen).toBeDefined()
+      expect(entry.runWhen).toBeDefined()
     }
   })
 
@@ -164,7 +161,6 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
 
   it("each sub-orchestrator's startFlow points at the expected entry stage", () => {
     const entries: Record<string, string> = {
-      bug: "plan",
       feature: "research",
       spec: "research",
       chore: "run",
