@@ -1,14 +1,14 @@
 {
-  "name": "run",
+  "name": "reproduce",
   "role": "primitive",
-  "describe": "Implement a GitHub issue end-to-end: branch, code, commit, open PR.",
+  "describe": "Write a failing test that reproduces a bug. Do NOT fix the bug — leave the test failing and capture the failure signature so subsequent fix verification can confirm the same failure mode.",
   "inputs": [
     {
       "name": "issue",
       "flag": "--issue",
       "type": "int",
       "required": true,
-      "describe": "GitHub issue number to implement."
+      "describe": "GitHub issue number to reproduce."
     }
   ],
   "claudeCode": {
@@ -37,48 +37,42 @@
       {
         "script": "setLifecycleLabel",
         "with": {
-          "label": "kody:running",
-          "color": "fbca04",
-          "description": "kody: implementing the change"
+          "label": "kody:reproducing",
+          "color": "fef2c0",
+          "description": "kody: writing a failing test that reproduces the bug"
         }
       },
       { "script": "runFlow" },
       { "script": "loadTaskState" },
-      { "script": "resolveArtifacts" },
-      { "script": "loadPriorArt" },
-      { "script": "loadVaultContext" },
       { "script": "loadConventions" },
       { "script": "loadCoverageRules" },
       { "script": "composePrompt" }
     ],
     "postflight": [
       { "script": "parseAgentResult" },
-      { "script": "requirePlanDeviations" },
-      { "script": "verify" },
-      { "script": "checkCoverageWithRetry" },
+      { "script": "parseReproOutput" },
+      { "script": "verifyReproFails" },
       { "script": "abortUnfinishedGitOps" },
       { "script": "commitAndPush" },
-      { "script": "ensurePr", "runWhen": { "data.verifyOk": true } },
+      { "script": "ensurePr" },
       { "script": "postIssueComment" },
+      { "script": "persistArtifacts" },
       { "script": "writeRunSummary" },
       { "script": "saveTaskState" },
       { "script": "mirrorStateToPr" },
       { "script": "advanceFlow" }
     ]
   },
-  "input": {
-    "artifacts": [
-      { "name": "plan", "required": false },
-      { "name": "repro", "required": false },
-      { "name": "repro.testPath", "required": false },
-      { "name": "repro.failureSignature", "required": false }
-    ]
-  },
   "output": {
     "actionTypes": [
-      "RUN_COMPLETED",
-      "RUN_FAILED",
+      "REPRODUCE_COMPLETED",
+      "REPRODUCE_FAILED",
       "AGENT_NOT_RUN"
+    ],
+    "artifacts": [
+      { "name": "repro", "format": "markdown", "from": "prSummary" },
+      { "name": "repro.testPath", "format": "text", "from": "reproTestPath" },
+      { "name": "repro.failureSignature", "format": "text", "from": "reproFailureSignature" }
     ]
   }
 }

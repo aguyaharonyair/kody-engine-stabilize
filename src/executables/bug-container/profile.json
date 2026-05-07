@@ -69,6 +69,15 @@
   },
   "children": [
     {
+      "exec": "reproduce",
+      "target": "issue",
+      "next": {
+        "REPRODUCE_COMPLETED": "plan",
+        "REPRODUCE_FAILED": "plan",
+        "*": "abort"
+      }
+    },
+    {
       "exec": "plan",
       "target": "issue",
       "next": {

@@ -41,6 +41,7 @@ import { notifyTerminal } from "./notifyTerminal.js"
 import { parseAgentResult } from "./parseAgentResult.js"
 import { parseIssueStateFromAgentResult } from "./parseIssueStateFromAgentResult.js"
 import { parseMissionStateFromAgentResult } from "./parseMissionStateFromAgentResult.js"
+import { parseReproOutput } from "./parseReproOutput.js"
 import { persistArtifacts } from "./persistArtifacts.js"
 import { persistFlowState } from "./persistFlowState.js"
 import { postIssueComment } from "./postIssueComment.js"
@@ -65,6 +66,7 @@ import { stageMergeConflicts } from "./stageMergeConflicts.js"
 import { startFlow } from "./startFlow.js"
 import { syncFlow } from "./syncFlow.js"
 import { verify } from "./verify.js"
+import { verifyReproFails } from "./verifyReproFails.js"
 import { waitForCi } from "./waitForCi.js"
 import { watchStalePrsFlow } from "./watchStalePrsFlow.js"
 import { writeIssueStateComment } from "./writeIssueStateComment.js"
@@ -109,11 +111,13 @@ export const postflightScripts: Record<string, PostflightScript> = {
   parseAgentResult,
   parseIssueStateFromAgentResult,
   parseMissionStateFromAgentResult,
+  parseReproOutput,
   writeIssueStateComment,
   writeMissionStateFile,
   requireFeedbackActions,
   requirePlanDeviations,
   verify,
+  verifyReproFails,
   checkCoverageWithRetry,
   abortUnfinishedGitOps,
   stageMergeConflicts,

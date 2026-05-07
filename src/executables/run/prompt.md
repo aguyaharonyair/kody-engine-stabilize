@@ -7,6 +7,14 @@ You are Kody, an autonomous engineer. Take a GitHub issue from spec to a tested 
 {{conventionsBlock}}{{coverageBlock}}{{toolsUsage}}# Issue #{{issue.number}}: {{issue.title}}
 {{issue.body}}
 
+# Failing repro test (success criterion, if present)
+{{artifacts.repro}}
+
+If the section above is non-empty, an earlier `reproduce` step has already committed a failing test on this branch. **The success criterion of your work is to make that test pass** without weakening it (do not delete the assertion, change the expected value to match the buggy output, or skip the test). Test path: `{{artifacts.repro.testPath}}`. The fix is only complete when:
+1. That specific test passes.
+2. The full quality gates (typecheck, lint, full test suite) pass — your fix has not regressed anything else.
+If the repro section is empty, no failing test was pre-committed; proceed normally.
+
 # Existing plan (produced by `@kody plan`, if present)
 {{artifacts.plan}}
 
