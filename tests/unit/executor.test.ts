@@ -146,7 +146,7 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     }
   })
 
-  it.each(["feature", "spec", "chore"])("`%s` sub-orchestrator profile loads cleanly", (name) => {
+  it.each(["feature", "spec"])("`%s` sub-orchestrator profile loads cleanly", (name) => {
     const profile = loadProfile(path.join(EXE_ROOT, `${name}/profile.json`))
     expect(profile.name).toBe(name)
     expect(profile.inputs.map((i) => i.name)).toEqual(["issue"])
@@ -159,11 +159,31 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     expect(post.at(-1)!.script).toBe("persistFlowState")
   })
 
+  it("`chore` container profile loads cleanly with children routing table", () => {
+    const profile = loadProfile(path.join(EXE_ROOT, "chore/profile.json"))
+    expect(profile.name).toBe("chore")
+    expect(profile.role).toBe("container")
+    expect(profile.inputs.map((i) => i.name)).toEqual(["issue"])
+    expect(profile.claudeCode.maxTurns).toBe(0)
+    const pre = profile.scripts.preflight.map((p) => p.script)
+    expect(pre[0]).toBe("setLifecycleLabel")
+    expect(pre).toContain("loadIssueContext")
+    expect(pre).toContain("loadTaskState")
+    const childExecs = (profile.children ?? []).map((c) => c.exec)
+    expect(childExecs).toEqual(["run", "review", "fix"])
+    const post = profile.scripts.postflight
+    expect(post.at(-1)!.script).toBe("persistFlowState")
+    for (const entry of post.slice(0, -1)) {
+      expect(entry.script).toBe("finishFlow")
+      expect(entry.with).toBeDefined()
+      expect(entry.runWhen).toBeDefined()
+    }
+  })
+
   it("each sub-orchestrator's startFlow points at the expected entry stage", () => {
     const entries: Record<string, string> = {
       feature: "research",
       spec: "research",
-      chore: "run",
     }
     for (const [name, expectedEntry] of Object.entries(entries)) {
       const profile = loadProfile(path.join(EXE_ROOT, `${name}/profile.json`))
