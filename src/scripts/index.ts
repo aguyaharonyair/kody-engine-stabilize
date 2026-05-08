@@ -57,6 +57,7 @@ import { requirePlanDeviations } from "./requirePlanDeviations.js"
 import { resolveArtifacts } from "./resolveArtifacts.js"
 import { resolveFlow } from "./resolveFlow.js"
 import { resolvePreviewUrl } from "./resolvePreviewUrl.js"
+import { resolveQaUrl } from "./resolveQaUrl.js"
 import { revertFlow } from "./revertFlow.js"
 import { reviewFlow } from "./reviewFlow.js"
 import { runFlow } from "./runFlow.js"
@@ -100,6 +101,7 @@ export const preflightScripts: Record<string, PreflightScript> = {
   resolveArtifacts,
   discoverQaContext,
   resolvePreviewUrl,
+  resolveQaUrl,
   composePrompt,
   setCommentTarget,
   setLifecycleLabel,

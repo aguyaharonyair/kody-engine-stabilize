@@ -8,8 +8,8 @@
       "name": "url",
       "flag": "--url",
       "type": "string",
-      "required": true,
-      "describe": "Base URL the agent should browse (e.g. http://localhost:3000)."
+      "required": false,
+      "describe": "Base URL the agent should browse. Optional — resolveQaUrl preflight falls back to the goal-branch Vercel deployment (when --goal is set), then $PREVIEW_URL, then qa.fallbackUrl from kody.config.json. Errors if none resolve."
     },
     {
       "name": "scope",
@@ -17,6 +17,13 @@
       "type": "string",
       "required": false,
       "describe": "Optional feature focus (e.g. 'admin chat memory recall'). Without a scope the agent does a broad smoke pass over discovered routes."
+    },
+    {
+      "name": "goal",
+      "flag": "--goal",
+      "type": "string",
+      "required": false,
+      "describe": "Optional kody goal id to attach findings to. When set: (1) resolveQaUrl looks up the goal-branch's latest Vercel deployment and uses its URL, (2) createQaGoal skips manifest creation and labels finding issues `goal:<id>` directly."
     },
     {
       "name": "issue",
@@ -78,6 +85,7 @@
   "outputArtifacts": [],
   "scripts": {
     "preflight": [
+      { "script": "resolveQaUrl" },
       { "script": "discoverQaContext" },
       { "script": "loadQaGuide" },
       { "script": "loadConventions" },

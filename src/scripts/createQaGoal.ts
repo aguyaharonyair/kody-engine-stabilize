@@ -501,34 +501,73 @@ export const createQaGoal: PostflightScript = async (ctx, _profile, agentResult:
     return
   }
 
-  // Goal mode: create a goal + N task issues.
-  const manifestRead = loadManifest(ctx.cwd)
-  const existingIds = new Set(manifestRead.manifest.goals.map((g) => g.id))
+  // Goal mode. Two paths:
+  //   - --goal <id> set → attach findings to that existing goal. Skip the
+  //     manifest update (goal already exists; we don't own the entry's
+  //     description). Still write/commit state.json so goal-scheduler keeps
+  //     ticking, in case it had been marked done/abandoned.
+  //   - no --goal     → create a new qa-<scope>-<date> goal, append it to
+  //     the manifest, write a fresh state.json. Original behavior.
+  const explicitGoal = (ctx.args.goal as string | undefined)?.trim()
   const scope = ctx.args.scope as string | undefined
-  const goalId = buildGoalId(scope, existingIds)
-  const goalName = buildGoalName(scope, verdict)
 
-  // Append goal to manifest BEFORE opening task issues. If a downstream step
-  // fails, the dashboard at least sees the goal entry it can manually clean.
-  const newGoal: ManifestGoal = {
-    id: goalId,
-    name: goalName,
-    description: markdown,
-    createdAt: new Date().toISOString(),
-  }
-  const nextManifest: ManifestBody = {
-    version: 1,
-    goals: [...manifestRead.manifest.goals, newGoal],
-  }
-  let manifestIssue: { number: number; created: boolean }
-  try {
-    manifestIssue = createOrUpdateManifestIssue(manifestRead.number, nextManifest, ctx.cwd)
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    ctx.output.exitCode = 4
-    ctx.output.reason = `failed to update goals manifest: ${truncate(msg, 1000)}`
-    ctx.data.action = failedAction(ctx.output.reason)
-    return
+  let goalId: string
+  let manifestIssueNumber: number | null = null
+  let manifestCreated = false
+  let manifestUpdated = false
+
+  if (explicitGoal && explicitGoal.length > 0) {
+    goalId = explicitGoal
+    // Best-effort: still post the report markdown as a comment on the
+    // existing manifest issue so the run isn't invisible. Skip manifest body
+    // mutation entirely — the goal description belongs to whoever opened the
+    // goal, not to this QA pass.
+    const manifestRead = loadManifest(ctx.cwd)
+    if (manifestRead.number !== null) {
+      manifestIssueNumber = manifestRead.number
+      try {
+        postIssueComment(
+          manifestRead.number,
+          `## QA — ${verdict} · goal \`${goalId}\`\n\n${markdown}`,
+          ctx.cwd,
+        )
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err)
+        process.stderr.write(`[createQaGoal] could not comment on manifest issue: ${reason.slice(0, 300)}\n`)
+      }
+    }
+  } else {
+    const manifestRead = loadManifest(ctx.cwd)
+    const existingIds = new Set(manifestRead.manifest.goals.map((g) => g.id))
+    goalId = buildGoalId(scope, existingIds)
+    const goalName = buildGoalName(scope, verdict)
+
+    // Append goal to manifest BEFORE opening task issues. If a downstream
+    // step fails, the dashboard at least sees the goal entry it can manually
+    // clean.
+    const newGoal: ManifestGoal = {
+      id: goalId,
+      name: goalName,
+      description: markdown,
+      createdAt: new Date().toISOString(),
+    }
+    const nextManifest: ManifestBody = {
+      version: 1,
+      goals: [...manifestRead.manifest.goals, newGoal],
+    }
+    let manifestIssue: { number: number; created: boolean }
+    try {
+      manifestIssue = createOrUpdateManifestIssue(manifestRead.number, nextManifest, ctx.cwd)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      ctx.output.exitCode = 4
+      ctx.output.reason = `failed to update goals manifest: ${truncate(msg, 1000)}`
+      ctx.data.action = failedAction(ctx.output.reason)
+      return
+    }
+    manifestIssueNumber = manifestIssue.number
+    manifestCreated = manifestIssue.created
+    manifestUpdated = true
   }
 
   // Open task issues. If any fail, log and continue — partial coverage is
@@ -538,7 +577,7 @@ export const createQaGoal: PostflightScript = async (ctx, _profile, agentResult:
   const failed: Array<{ title: string; reason: string }> = []
   for (const f of findings) {
     try {
-      const issue = createTaskIssue(f, goalId, manifestIssue.number, ctx.cwd)
+      const issue = createTaskIssue(f, goalId, manifestIssueNumber, ctx.cwd)
       opened.push({ ...issue, severity: f.severity })
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err)
@@ -552,7 +591,14 @@ export const createQaGoal: PostflightScript = async (ctx, _profile, agentResult:
   commitAndPushState(stateFile, goalId, ctx.cwd)
 
   const repoUrl = `https://github.com/${ctx.config.github.owner}/${ctx.config.github.repo}`
-  process.stdout.write(`\nQA_GOAL_OPENED=${repoUrl}/issues/${manifestIssue.number} (id: ${goalId}, verdict: ${verdict})\n`)
+  if (manifestIssueNumber !== null) {
+    const verb = manifestUpdated ? (manifestCreated ? "OPENED" : "UPDATED") : "TARGETED"
+    process.stdout.write(
+      `\nQA_GOAL_${verb}=${repoUrl}/issues/${manifestIssueNumber} (id: ${goalId}, verdict: ${verdict})\n`,
+    )
+  } else {
+    process.stdout.write(`\nQA_GOAL_TARGETED=(no manifest issue) (id: ${goalId}, verdict: ${verdict})\n`)
+  }
   for (const o of opened) {
     process.stdout.write(`QA_FINDING_OPENED=${o.url} (severity: ${o.severity})\n`)
   }
@@ -562,10 +608,10 @@ export const createQaGoal: PostflightScript = async (ctx, _profile, agentResult:
 
   ctx.data.action = qaAction(verdict, {
     goalId,
-    manifestIssue: manifestIssue.number,
+    manifestIssue: manifestIssueNumber ?? undefined,
     findingsOpened: opened.length,
     findingsFailed: failed.length,
-    mode: "goal",
+    mode: explicitGoal ? "goal-attach" : manifestCreated ? "goal-create" : "goal-append",
   })
   ctx.output.exitCode = verdict === "FAIL" ? 1 : 0
 }

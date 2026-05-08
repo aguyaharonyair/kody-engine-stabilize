@@ -4,13 +4,13 @@ You may write throwaway artifacts (screenshots, ad-hoc Playwright specs) under `
 
 # Target
 
-Base URL: `{{args.url}}`
+Base URL: `{{previewUrl}}` (resolved from: {{previewUrlSource}})
 {{#args.scope}}Focus: **{{args.scope}}**{{/args.scope}}
 {{^args.scope}}Focus: broad smoke across discovered routes.{{/args.scope}}
 {{#args.authProfile}}Auth: a saved Playwright `storageState.json` is available at `{{args.authProfile}}`. Pass it to `mcp__playwright__browser_navigate` via the `storageState` parameter so the session starts pre-authenticated.{{/args.authProfile}}
 {{^args.authProfile}}Auth: log in fresh using credentials from the QA guide if needed.{{/args.authProfile}}
 
-Report destination: {{#args.issue}}existing issue #{{args.issue}} (postflight will comment on it){{/args.issue}}{{^args.issue}}a new issue (postflight will open one and label it `kody:qa-report`){{/args.issue}}.
+Report destination: {{#args.goal}}existing kody goal `{{args.goal}}` (each finding becomes a `goal:{{args.goal}}` task issue){{/args.goal}}{{^args.goal}}{{#args.issue}}existing issue #{{args.issue}} (postflight will comment on it){{/args.issue}}{{^args.issue}}a new kody goal (postflight will append to the goals manifest and open one task issue per finding){{/args.issue}}{{/args.goal}}.
 
 # How to browse
 
@@ -19,7 +19,7 @@ You have the **Playwright MCP** tools (`mcp__playwright__browser_navigate`, `mcp
 Before anything else, navigate to the base URL:
 
 ```
-mcp__playwright__browser_navigate({ url: "{{args.url}}" })
+mcp__playwright__browser_navigate({ url: "{{previewUrl}}" })
 ```
 
 If that errors (timeout, DNS, connection refused), the app is unreachable. STOP browsing, write a short report explaining the failure, and exit. Don't fabricate findings.
@@ -63,7 +63,7 @@ If that errors (timeout, DNS, connection refused), the app is unreachable. STOP 
 ```
 ## Verdict: PASS | CONCERNS | FAIL
 
-_QA by kody — browsed `{{args.url}}`{{#args.scope}} (focus: {{args.scope}}){{/args.scope}}_
+_QA by kody — browsed `{{previewUrl}}`{{#args.scope}} (focus: {{args.scope}}){{/args.scope}}_
 
 ### Summary
 <2–3 sentences: what you covered and what the running app actually does>
