@@ -81,6 +81,7 @@
       { "script": "discoverQaContext" },
       { "script": "loadQaGuide" },
       { "script": "loadConventions" },
+      { "script": "warmupMcp" },
       { "script": "composePrompt" }
     ],
     "postflight": [

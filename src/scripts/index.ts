@@ -69,6 +69,7 @@ import { syncFlow } from "./syncFlow.js"
 import { verify } from "./verify.js"
 import { verifyReproFails } from "./verifyReproFails.js"
 import { waitForCi } from "./waitForCi.js"
+import { warmupMcp } from "./warmupMcp.js"
 import { watchStalePrsFlow } from "./watchStalePrsFlow.js"
 import { writeIssueStateComment } from "./writeIssueStateComment.js"
 import { writeJobStateFile } from "./writeJobStateFile.js"
@@ -104,6 +105,7 @@ export const preflightScripts: Record<string, PreflightScript> = {
   skipAgent,
   classifyByLabel,
   diagMcp,
+  warmupMcp,
   dispatchJobTicks,
   dispatchJobFileTicks,
 }
