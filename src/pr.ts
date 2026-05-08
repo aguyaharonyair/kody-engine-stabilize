@@ -30,6 +30,24 @@ export interface EnsurePrOptions {
 const TITLE_MAX = 72
 
 /**
+ * Per-task PRs opened against a goal branch (`goal-<id>`) are staging-only —
+ * humans review the final `goal-<id> → defaultBranch` rollup PR, not each
+ * individual task PR. Goal-tick serializes by waiting for each task issue to
+ * close (via `Closes #N` on PR merge into the goal branch). If those PRs
+ * never merge, the goal stalls forever after task 1.
+ *
+ * So: enable auto-merge whenever the base is a goal branch and the PR is not
+ * a draft. Auto-merge waits for required checks to pass before squashing in.
+ * Drafts are excluded — they signal "agent failed; human triage" and should
+ * not auto-merge.
+ */
+export function shouldEnableAutoMerge(baseBranch: string | undefined, draft: boolean): boolean {
+  if (draft) return false
+  if (!baseBranch) return false
+  return baseBranch.startsWith("goal-")
+}
+
+/**
  * Strip any leading `[WIP] #N: ` / `#N: ` prefixes that an earlier run may
  * have already baked into the title. Without this the prefix stacks on every
  * fix/fix-ci/resolve run (e.g. "[WIP] #42: [WIP] #42: [WIP] #42: ...").
@@ -215,5 +233,26 @@ export function ensurePr(opts: EnsurePrOptions): PrResult {
   const url = output.trim()
   const match = url.match(/\/pull\/(\d+)$/)
   const number = match ? parseInt(match[1], 10) : 0
+
+  // Goal-task PRs (base = goal-<id>) must auto-merge into the goal branch so
+  // goal-tick can advance to the next task once checks pass. Without this the
+  // goal serializes on a single PR sitting open forever (see goal-tick's
+  // in-flight check in src/executables/goal-tick/tick.sh). Best-effort: if
+  // auto-merge is disabled at the repo level or the token lacks permission,
+  // log to stderr and continue — the PR still exists, the operator can merge
+  // by hand. We don't fail the run.
+  if (number > 0 && shouldEnableAutoMerge(opts.baseBranch, opts.draft)) {
+    try {
+      gh(["pr", "merge", String(number), "--auto", "--squash"], { cwd: opts.cwd })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      process.stderr.write(
+        `[ensurePr] auto-merge enable failed for PR #${number} (base ${base}): ${msg.slice(-400)}\n` +
+          `[ensurePr]   goal-tick will stall on this task until the PR merges manually.\n` +
+          `[ensurePr]   Enable "Allow auto-merge" in the repo settings to unblock future runs.\n`,
+      )
+    }
+  }
+
   return { url, number, draft: opts.draft, action: "created" }
 }

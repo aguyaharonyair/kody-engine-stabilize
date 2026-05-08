@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { buildPrBody, buildPrTitle, recoverSourceIssueNumber, stripTitlePrefixes } from "../../src/pr.js"
+import {
+  buildPrBody,
+  buildPrTitle,
+  recoverSourceIssueNumber,
+  shouldEnableAutoMerge,
+  stripTitlePrefixes,
+} from "../../src/pr.js"
 
 describe("pr: buildPrTitle", () => {
   it("formats issue number and title", () => {
@@ -147,5 +153,33 @@ describe("pr: recoverSourceIssueNumber", () => {
   it("returns null when the branch-parsed number equals the PR's own number", () => {
     // Avoids the same self-reference trap as the body-parse case.
     expect(recoverSourceIssueNumber("", "1326-slug", 1326)).toBeNull()
+  })
+})
+
+describe("pr: shouldEnableAutoMerge", () => {
+  it("enables for goal-branch base on a non-draft PR", () => {
+    expect(shouldEnableAutoMerge("goal-qa-login-page-2026-05-08", false)).toBe(true)
+  })
+
+  it("never enables on a draft PR even when base is a goal branch", () => {
+    // Drafts mean the agent failed and a human should triage — auto-merging
+    // would push half-baked work into the goal branch.
+    expect(shouldEnableAutoMerge("goal-qa-login-page-2026-05-08", true)).toBe(false)
+  })
+
+  it("does not enable when base is the default branch", () => {
+    // Regular issue → main PRs must remain human-reviewed.
+    expect(shouldEnableAutoMerge("main", false)).toBe(false)
+    expect(shouldEnableAutoMerge("dev", false)).toBe(false)
+  })
+
+  it("does not enable when baseBranch is undefined", () => {
+    expect(shouldEnableAutoMerge(undefined, false)).toBe(false)
+  })
+
+  it("does not enable when base merely contains 'goal' but doesn't start with 'goal-'", () => {
+    // Strict prefix match — `feature-goal-tracker` is unrelated user work.
+    expect(shouldEnableAutoMerge("feature-goal-tracker", false)).toBe(false)
+    expect(shouldEnableAutoMerge("my-goal-branch", false)).toBe(false)
   })
 })
