@@ -251,6 +251,42 @@ ensure_label "$failed_label" "b60205" "kody goal-runner: task failed; needs huma
 # counting child tasks, so list_goal_issues can filter it out cleanly.
 ensure_goal_issue
 
+# Close dispatched task issues whose PR has merged into the goal branch.
+# `Closes #N` in the PR body only auto-closes the issue when the PR merges
+# into the default branch — goal-task PRs target the goal branch, so we must
+# close the issues explicitly. Without this, in_flight stays > 0 forever and
+# the goal stalls after task 1. We accept the linkage from either:
+#   - `Closes|Fixes|Resolves #N` in the PR body (authoritative), OR
+#   - leading number on the head ref (kody convention: `<issue>-<slug>`).
+merged_prs=$(gh pr list --base "$goal_branch" --state merged --limit 50 --json number,headRefName,body 2>/dev/null || echo "[]")
+echo "$merged_prs" | python3 -c "
+import json, re, sys
+data = json.load(sys.stdin)
+seen = set()
+for pr in data:
+    n = None
+    body = pr.get('body') or ''
+    m = re.search(r'(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b', body)
+    if m:
+        n = int(m.group(1))
+    else:
+        bm = re.match(r'^(\d+)-', pr.get('headRefName') or '')
+        if bm:
+            n = int(bm.group(1))
+    if n and n not in seen:
+        seen.add(n)
+        print(n)
+" | while read -r issue_num; do
+  [ -n "$issue_num" ] || continue
+  state=$(gh issue view "$issue_num" --json state --jq .state 2>/dev/null || echo "")
+  if [ "$state" = "OPEN" ]; then
+    echo "[goal-tick] closing #${issue_num} (PR merged into ${goal_branch})"
+    gh issue close "$issue_num" \
+      --comment "_Closed by goal-tick: PR for this task merged into \`${goal_branch}\`._" \
+      >/dev/null 2>&1 || echo "[goal-tick] failed to close #${issue_num} (continuing)"
+  fi
+done
+
 issues_json=$(list_goal_issues)
 total=$(echo "$issues_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
 if [ "$total" = "0" ]; then
