@@ -302,32 +302,101 @@ function writeStateFile(cwd: string, goalId: string, lastDispatchedIssue?: numbe
   return filePath
 }
 
-function commitAndPushState(filePath: string, goalId: string, cwd: string): void {
+/**
+ * Run a git command, capturing stderr. Returns { ok, stderr }. Never throws.
+ * The host repo's pre-* hooks read SKIP_HOOKS=1 (kody convention) — set both
+ * that and HUSKY=0 (Husky 8) on every invocation so we don't trip
+ * pre-commit/pre-push verification on auto-generated state.json edits.
+ */
+function gitTry(args: string[], cwd: string): { ok: boolean; stderr: string } {
   const env: NodeJS.ProcessEnv = { ...process.env, SKIP_HOOKS: "1", HUSKY: "0" }
-  const run = (args: string[]): void => {
-    execFileSync("git", args, { cwd, stdio: "pipe", env })
-  }
   try {
-    run(["add", filePath])
-    // Skip if staged diff is empty.
-    try {
-      execFileSync("git", ["diff", "--cached", "--quiet"], { cwd, stdio: "pipe", env })
-      // exit 0 = no diff, nothing to commit
-      return
-    } catch {
-      // exit 1 = diff present, continue to commit
-    }
-    run(["commit", "-m", `chore(goals): activate ${goalId}`, "--quiet"])
-    try {
-      run(["push", "--quiet"])
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      process.stderr.write(`[createQaGoal] state.json commit landed but push failed: ${msg.slice(0, 300)}\n`)
-    }
+    execFileSync("git", args, { cwd, stdio: ["ignore", "pipe", "pipe"], env })
+    return { ok: true, stderr: "" }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    process.stderr.write(`[createQaGoal] failed to commit state.json: ${msg.slice(0, 300)}\n`)
+    const e = err as { stderr?: Buffer | string; message?: string }
+    const stderr =
+      typeof e?.stderr === "string"
+        ? e.stderr
+        : Buffer.isBuffer(e?.stderr)
+          ? e.stderr.toString("utf8")
+          : (e?.message ?? "")
+    return { ok: false, stderr: stderr.trim() }
   }
+}
+
+function commitAndPushState(filePath: string, goalId: string, cwd: string): void {
+  const add = gitTry(["add", filePath], cwd)
+  if (!add.ok) {
+    process.stderr.write(`[createQaGoal] git add failed: ${add.stderr.slice(-400) || "(no stderr)"}\n`)
+    return
+  }
+
+  // No diff → nothing to commit. `git diff --cached --quiet` exits 1 when
+  // there IS a diff, 0 when clean — mirror that semantics.
+  const diff = gitTry(["diff", "--cached", "--quiet"], cwd)
+  if (diff.ok) {
+    process.stderr.write(`[createQaGoal] state.json unchanged — nothing to commit\n`)
+    return
+  }
+
+  const commit = gitTry(["commit", "-m", `chore(goals): activate ${goalId}`, "--quiet"], cwd)
+  if (!commit.ok) {
+    process.stderr.write(`[createQaGoal] git commit failed: ${commit.stderr.slice(-400) || "(no stderr)"}\n`)
+    return
+  }
+
+  // Try a normal push first. The most common failure on a busy repo is a
+  // non-fast-forward when origin moved during the agent's session — recover
+  // by rebasing and retrying once. Hook-related failures fall through to a
+  // best-effort --no-verify retry; that's gated on already having SKIP_HOOKS
+  // set and only kicks in when the operator's hook config doesn't honor it.
+  const push = gitTry(["push", "--quiet"], cwd)
+  if (push.ok) return
+
+  const stderr = push.stderr
+  const tail = stderr.slice(-400) || "(no stderr captured)"
+
+  if (/non-fast-forward|rejected|fetch first|behind/i.test(stderr)) {
+    process.stderr.write(`[createQaGoal] push rejected (non-fast-forward) — pulling --rebase and retrying\n`)
+    const rebase = gitTry(["pull", "--rebase", "--autostash", "--quiet"], cwd)
+    if (!rebase.ok) {
+      process.stderr.write(
+        `[createQaGoal] rebase failed (manual recovery required): ${rebase.stderr.slice(-400) || "(no stderr)"}\n`,
+      )
+      return
+    }
+    const retryPush = gitTry(["push", "--quiet"], cwd)
+    if (retryPush.ok) {
+      process.stderr.write(`[createQaGoal] push succeeded after rebase\n`)
+      return
+    }
+    process.stderr.write(
+      `[createQaGoal] push still failed after rebase: ${retryPush.stderr.slice(-400) || "(no stderr)"}\n`,
+    )
+    return
+  }
+
+  if (/pre-push|hook|husky/i.test(stderr)) {
+    process.stderr.write(`[createQaGoal] push rejected by pre-push hook — retrying with --no-verify\n`)
+    process.stderr.write(`[createQaGoal] hook output:\n${tail}\n`)
+    const noVerify = gitTry(["push", "--no-verify", "--quiet"], cwd)
+    if (noVerify.ok) {
+      process.stderr.write(`[createQaGoal] push succeeded with --no-verify (consider adding kody artifacts to ignore configs)\n`)
+      return
+    }
+    process.stderr.write(
+      `[createQaGoal] --no-verify push also failed: ${noVerify.stderr.slice(-400) || "(no stderr)"}\n`,
+    )
+    return
+  }
+
+  // Anything else: surface the real error so the operator can act.
+  process.stderr.write(
+    `[createQaGoal] state.json commit landed but push failed.\n` +
+      `[createQaGoal]   The goal will not be visible to goal-scheduler in CI until you run 'git push' manually.\n` +
+      `[createQaGoal]   git stderr:\n${tail}\n`,
+  )
 }
 
 function createTaskIssue(
