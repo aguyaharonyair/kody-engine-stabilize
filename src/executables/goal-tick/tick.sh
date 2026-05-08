@@ -143,7 +143,11 @@ fi
 
 echo "[goal-tick] dispatching @kody on task #$next_issue"
 gh issue comment "$next_issue" --body "@kody"
-gh issue edit "$next_issue" --add-label "$dispatched_label" || true
+# Ensure the dedup label exists in the repo. It lives outside the `kody:`
+# namespace so `ensureLabels` doesn't create it at init time, and a missing
+# label silently swallowed here would re-dispatch the same issue every tick.
+gh label create "$dispatched_label" --color ededed --description "kody goal-runner: already dispatched this tick" --force >/dev/null 2>&1 || true
+gh issue edit "$next_issue" --add-label "$dispatched_label"
 
 # Bump updatedAt so the file changes (cheap audit trail in git log).
 python3 - "$state_file" "$next_issue" <<'PY'
