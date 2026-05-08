@@ -50,6 +50,9 @@ kody plan      --issue <N>                             # research + implementati
 kody research  --issue <N>                             # map repo context, surface gaps
 kody review    --pr    <N>                             # structured diff review
 kody ui-review --pr    <N> [--preview-url <URL>]       # UI review — browses preview via Playwright MCP
+kody qa-engineer [--url <URL>] [--scope ...]           # free-form QA — browses, opens findings as goal task issues
+               [--goal <id>] [--issue <N>]
+               [--auth-profile <storageState.json>]
 kody classify  --issue <N>                             # pick a flow type (feature/bug/spec/chore)
 
 # flow orchestrators (no agent of their own — transition tables)
@@ -86,11 +89,113 @@ A **job** is a stateful, bounded goal expressed as a labeled GitHub issue (`kody
 
 ### `ui-review`
 
-Drives the running preview deployment via the Playwright MCP server alongside the usual diff review.
+PR-bound UI review. Drives the running preview deployment via the Playwright MCP server alongside the usual diff review, posts one structured review comment.
 
 - Preview URL: `--preview-url` → `$PREVIEW_URL` → `http://localhost:3000`. Unreachable → falls back to diff-only.
 - Credentials: `.kody/qa-guide.md` (committed, scaffolded by `kody init` with `CHANGE_ME` placeholders).
 - Auto-discovery: routes, roles, login/admin paths, Payload CMS collections, API routes, env vars — fed to the agent as context.
+
+For free-form QA passes (no diff, no PR), see [`qa-engineer`](#qa-engineer) below.
+
+### `qa-engineer`
+
+Free-form QA pass. Browses a running site with Playwright MCP, exercises UI states (happy / empty / error / loading / mobile / a11y), and turns findings into a kody goal whose tasks are individually triageable, severity-labelled bug issues. Read-only on the repo (no commits except the goal's own `state.json`).
+
+```bash
+# broad smoke against the project's qa.fallbackUrl
+kody qa-engineer
+
+# focused pass; opens a new qa-<scope>-<date> goal + N task issues
+kody qa-engineer --scope "checkout flow"
+
+# attach findings to an existing goal (resolves URL from goal-<id>'s Vercel deployment)
+kody qa-engineer --goal admin-chat-memory-recall-ui
+
+# explicit URL overrides everything; useful for testing a deployed PR preview
+kody qa-engineer --url https://my-feature-branch.vercel.app --scope "search UX"
+
+# pre-authenticated session via committed Playwright storageState
+kody qa-engineer --scope "admin" --auth-profile .kody/qa-storage-state.json
+
+# PASS verdicts (no findings) skip goal creation; --issue routes the report to a comment
+kody qa-engineer --scope "smoke" --issue 1234
+```
+
+**URL resolution chain.** `resolveQaUrl` walks the chain in order; first non-empty source wins:
+
+1. `--url <URL>` — explicit
+2. `--goal <id>` → latest successful Vercel deployment for the `goal-<id>` branch (via `repos/.../deployments?ref=goal-<id>` + statuses)
+3. `$PREVIEW_URL` env var
+4. `kody.config.json` → `qa.fallbackUrl` (per-project)
+5. error — no localhost defaults; CI has no localhost to fall back to.
+
+Configure the project default in `kody.config.json`:
+
+```json
+{
+  "qa": { "fallbackUrl": "https://dev.example.com" }
+}
+```
+
+**Output modes.**
+
+| Trigger | What happens |
+|---|---|
+| Findings + no `--goal` | Appends a new `qa-<scope>-<date>` entry to the `kody:goals-manifest` issue (description = full report markdown). Opens N task issues, each labelled `goal:<id>` + `severity:Px` + `kody:qa-finding`. Writes `.kody/goals/<id>/state.json` (state: `active`) and pushes — `goal-scheduler` picks it up next tick. |
+| Findings + `--goal <id>` | Skips manifest body mutation (the existing goal owns its description). Posts the report markdown as a comment on the manifest issue. Opens N task issues with `goal:<id>` labels. |
+| Zero findings + `--issue <N>` | Posts the report as a comment on issue N. No goal touched. |
+| Zero findings + no `--issue` | Opens a single `kody:qa-finding`-labelled record issue with the full report body. |
+
+**Agent-emitted JSON contract.** The prompt requires the agent's final message to end with a machine-readable block:
+
+```
+<!-- KODY_QA_REPORT_JSON
+```json
+{
+  "findings": [
+    {
+      "severity": "P0|P1|P2|P3",
+      "title": "Short imperative — becomes the issue title",
+      "route": "/admin/...",
+      "steps": "1. ...\n2. ...",
+      "expected": "...",
+      "actual": "...",
+      "evidence": ".kody/qa-reports/<scope>/<finding>.png"
+    }
+  ]
+}
+```
+-->
+```
+
+If the block is missing or malformed, the postflight falls back to single-issue mode and logs a warning. Severity rubric: P0 blocks core flow / data loss / security → verdict FAIL; P1 broken non-critical feature → typically FAIL; P2 degraded UX → typically CONCERNS; P3 polish → doesn't affect verdict.
+
+**GHA usage.** Trigger from any issue comment (auto-dispatched by the existing kody.yml workflow):
+
+```
+@kody qa-engineer --goal add-per-user-chat-memory-recall-ui --scope "memory recall UI"
+```
+
+…or via `workflow_dispatch`:
+
+```bash
+gh workflow run kody.yml -F executable=qa-engineer \
+  -F args="--goal admin-chat-memory-recall-ui --scope 'admin chat'"
+```
+
+**Auto-discovery & credentials.** Same as `ui-review`: `discoverQaContext` scans the repo for routes/roles/admin path/Payload collections/env vars; `loadQaGuide` reads committed credentials from `.kody/qa-guide.md`. The agent only logs in if a route under test requires it.
+
+**Artifacts.** Screenshots and DOM snapshots go to `.kody/qa-reports/<scope-slug>/`; the Playwright MCP also writes to `.playwright-mcp/`. Both should be in `.gitignore` and `.prettierignore` — `kody init` doesn't yet scaffold these, add them manually:
+
+```gitignore
+.kody/qa-reports/
+.playwright-mcp/
+```
+
+```
+.kody/**
+.playwright-mcp/**
+```
 
 ### `memorize` — vault wiki
 
