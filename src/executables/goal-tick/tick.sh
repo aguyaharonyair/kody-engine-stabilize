@@ -142,15 +142,19 @@ ensure_goal_issue() {
   body=$(printf "Umbrella issue for goal **%s**.\n\nClosed automatically when the goal PR (\`%s\` → \`%s\`) merges.\n" \
     "$goal_id" "$goal_branch" "$default_branch")
 
-  num=$(gh issue create \
+  # `gh issue create` prints the new issue's URL on stdout
+  # (https://github.com/<owner>/<repo>/issues/<n>). It does NOT support
+  # --json/--jq, so parse the trailing number off the URL.
+  local url
+  url=$(gh issue create \
     --title "$title" \
     --body "$body" \
     --label "$label" \
-    --label "kody:building" \
-    --json number --jq '.number' 2>/dev/null || echo "")
+    --label "kody:building" 2>/dev/null || echo "")
 
-  if [ -z "$num" ]; then
-    echo "[goal-tick] ensure_goal_issue: gh issue create failed — continuing without umbrella issue"
+  num="${url##*/}"
+  if [ -z "$num" ] || ! [[ "$num" =~ ^[0-9]+$ ]]; then
+    echo "[goal-tick] ensure_goal_issue: gh issue create failed (got '${url}') — continuing without umbrella issue"
     return 0
   fi
 
