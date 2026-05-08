@@ -26,7 +26,7 @@ If a prior-art block is present above, scan it before editing — those are earl
 # Required steps
 1. **Extract** every actionable item from the feedback. A structured review uses headings like `### Concerns`, `### Suggestions`, and `### Bugs`; each bullet under those headings is a distinct item. `### Strengths`, `### Summary`, and `### Bottom line` are NOT items — skip them. If the feedback has no headings (plain inline feedback), treat the whole feedback as one item.
 2. **Number each item** internally (Item 1, Item 2, …). You will account for every one of them in your final message below.
-3. **Research** — read only what's needed to act on the items. Make the minimum edits required to implement each one. If the feedback or PR body links to external URLs (reproduction sites, bug recordings, spec pages), use the **Playwright MCP** tools (`mcp__playwright__browser_navigate`, `mcp__playwright__browser_snapshot`) to load them — do not rely on your interpretation of the URL alone.
+3. **Research** — read only what's needed to act on the items. Make the minimum edits required to implement each one. If the feedback or PR body links to external **non-GitHub** URLs (reproduction sites, bug recordings, spec pages), use the **Playwright MCP** tools (`mcp__playwright__browser_navigate`, `mcp__playwright__browser_snapshot`) to load them — do not rely on your interpretation of the URL alone. Do NOT open GitHub URLs (issues, PRs, repo files, gists) in Playwright — the browser session is anonymous and will 404 on private repos. Issue/PR context is already in this prompt; for anything else on GitHub, use the `gh` CLI via Bash.
 
    **Research floor (MUST be met before any Edit/Write):**
    - Read the **full** contents of every file you intend to change.
