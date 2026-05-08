@@ -266,6 +266,26 @@ if [ -z "$next_issue" ]; then
   exit 0
 fi
 
+# Lazy goal-branch creation: only spin up origin/goal-<id> at the moment we're
+# about to dispatch the first task. Goals whose ticks never dispatch (every
+# task closed as won't-fix, or every open task already has goal-runner:failed)
+# never produce an orphan branch on origin. Idempotent: if origin/goal-<id>
+# already exists we skip. Failure here is non-fatal — ensureFeatureBranch in
+# the dispatched run falls back to forking from defaultBranch.
+git fetch origin --quiet 2>/dev/null || true
+if git rev-parse --verify --quiet "refs/remotes/origin/${goal_branch}" >/dev/null 2>&1; then
+  echo "[goal-tick] origin/${goal_branch} already exists — leaving as-is"
+else
+  if ! git rev-parse --verify --quiet "refs/remotes/origin/${default_branch}" >/dev/null 2>&1; then
+    echo "[goal-tick] cannot create goal branch: origin/${default_branch} missing"
+  else
+    echo "[goal-tick] creating origin/${goal_branch} from origin/${default_branch}"
+    if ! git push origin "refs/remotes/origin/${default_branch}:refs/heads/${goal_branch}" --quiet 2>&1; then
+      echo "[goal-tick] push of ${goal_branch} failed — task dispatch will fall back to defaultBranch"
+    fi
+  fi
+fi
+
 echo "[goal-tick] dispatching @kody on task #$next_issue (--base $goal_branch)"
 gh issue comment "$next_issue" --body "@kody --base ${goal_branch}"
 gh issue edit "$next_issue" --add-label "$dispatched_label"
