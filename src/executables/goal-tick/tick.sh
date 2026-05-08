@@ -175,10 +175,29 @@ PY
 }
 
 list_goal_issues() {
-  # Up to 100 goal-labelled issues. PRs filtered out.
+  # Up to 100 goal-labelled issues. PRs filtered out. Also filters out the
+  # umbrella goal issue (if any) — it shares the `goal:<id>` label so the
+  # dashboard groups it under the goal, but it must NOT count as a child
+  # task: while the umbrella is open the "all child tasks closed" finalize
+  # check would never fire (the umbrella only closes on goal-PR merge,
+  # which only happens during finalize — deadlock).
+  local exclude
+  exclude=$(read_state_field "goalIssueNumber")
   gh api \
     "repos/{owner}/{repo}/issues?labels=${label}&state=all&per_page=100" \
-    --jq '[.[] | select(.pull_request == null) | {number, state: (.state | ascii_upcase), labels: [.labels[].name]}]'
+    --jq '[.[] | select(.pull_request == null) | {number, state: (.state | ascii_upcase), labels: [.labels[].name]}]' \
+    | EXCLUDE="$exclude" python3 -c "
+import json, os, sys
+data = json.load(sys.stdin)
+ex = os.environ.get('EXCLUDE', '')
+if ex:
+    try:
+        ex_num = int(ex)
+        data = [i for i in data if i['number'] != ex_num]
+    except ValueError:
+        pass
+print(json.dumps(data))
+"
 }
 
 # ── Cleanup path: state == abandoned ──────────────────────────────────────────
@@ -223,6 +242,14 @@ fi
 # Make sure the dedup labels exist before we read/write them.
 ensure_label "$dispatched_label" "ededed" "kody goal-runner: already dispatched this tick"
 ensure_label "$failed_label" "b60205" "kody goal-runner: task failed; needs human attention"
+
+# Open the umbrella goal issue on the first active tick (idempotent — no-op if
+# state.json already has goalIssueNumber). The dashboard renders this issue as
+# the goal's "row" with kody:building status; it auto-closes when the final
+# goal PR merges via the `Closes #N` we add to that PR's body. Doing this here
+# (before list_goal_issues) ensures the umbrella exists before we start
+# counting child tasks, so list_goal_issues can filter it out cleanly.
+ensure_goal_issue
 
 issues_json=$(list_goal_issues)
 total=$(echo "$issues_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
@@ -360,12 +387,6 @@ else
     fi
   fi
 fi
-
-# The goal branch now exists (or the fallback path will be used). Open the
-# umbrella goal issue if we haven't yet, so the dashboard can render the goal
-# as an issue row with a "kody:building" status and the goal branch as its
-# preview. Idempotent — only the first call actually creates anything.
-ensure_goal_issue
 
 echo "[goal-tick] dispatching @kody on task #$next_issue (--base $goal_branch)"
 gh issue comment "$next_issue" --body "@kody --base ${goal_branch}"
