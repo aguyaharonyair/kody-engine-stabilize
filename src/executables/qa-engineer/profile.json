@@ -57,7 +57,7 @@
       {
         "name": "playwright",
         "command": "npx",
-        "args": ["-y", "--package=@playwright/mcp@latest", "--", "playwright-mcp"]
+        "args": ["-y", "--package=@playwright/mcp@latest", "--", "playwright-mcp", "--headless"]
       }
     ]
   },
