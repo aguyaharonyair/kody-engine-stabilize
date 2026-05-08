@@ -108,6 +108,68 @@ ensure_label() {
   gh label create "$1" --color "$2" --description "$3" --force >/dev/null 2>&1 || true
 }
 
+read_state_field() {
+  # read_state_field <key>  — prints the value or empty string. Never fails.
+  python3 - "$state_file" "$1" <<'PY' 2>/dev/null || echo ""
+import json, sys
+path, key = sys.argv[1], sys.argv[2]
+try:
+    with open(path) as f:
+        s = json.load(f)
+    v = s.get(key, "")
+    print("" if v is None else v)
+except Exception:
+    print("")
+PY
+}
+
+ensure_goal_issue() {
+  # Create the umbrella goal issue (once), label it goal:<id> + kody:building,
+  # and persist its number on state.json. Idempotent: if state already has
+  # goalIssueNumber, this is a no-op. The issue auto-closes when the final
+  # goal PR merges, via the `Closes #N` line we add to that PR body.
+  local existing
+  existing=$(read_state_field "goalIssueNumber")
+  if [ -n "$existing" ] && [ "$existing" != "0" ]; then
+    return 0
+  fi
+
+  ensure_label "$label" "0e8a16" "kody goal task: belongs to goal ${goal_id}"
+  ensure_label "kody:building" "1d76db" "kody: in-flight (work being assembled on a branch)"
+
+  local title body num
+  title="goal: ${goal_id}"
+  body=$(printf "Umbrella issue for goal **%s**.\n\nClosed automatically when the goal PR (\`%s\` → \`%s\`) merges.\n" \
+    "$goal_id" "$goal_branch" "$default_branch")
+
+  num=$(gh issue create \
+    --title "$title" \
+    --body "$body" \
+    --label "$label" \
+    --label "kody:building" \
+    --json number --jq '.number' 2>/dev/null || echo "")
+
+  if [ -z "$num" ]; then
+    echo "[goal-tick] ensure_goal_issue: gh issue create failed — continuing without umbrella issue"
+    return 0
+  fi
+
+  python3 - "$state_file" "$num" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+path = sys.argv[1]
+n = int(sys.argv[2])
+with open(path) as f:
+    s = json.load(f)
+s["goalIssueNumber"] = n
+s["updatedAt"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+with open(path, "w") as f:
+    json.dump(s, f, indent=2)
+    f.write("\n")
+PY
+  echo "[goal-tick] opened umbrella issue #${num} for ${goal_id}"
+}
+
 list_goal_issues() {
   # Up to 100 goal-labelled issues. PRs filtered out.
   gh api \
@@ -181,7 +243,16 @@ if [ "$open_count" = "0" ]; then
     existing_pr=$(gh pr list --head "$goal_branch" --state open --json number,url --jq '.[0]' 2>/dev/null || echo "")
     if [ -z "$existing_pr" ] || [ "$existing_pr" = "null" ]; then
       title="goal: ${goal_id}"
-      body=$(printf "Final integration PR for goal **%s**.\n\nAll task issues are closed and merged into \`%s\`. Ready for review.\n" "$goal_id" "$goal_branch")
+      goal_issue_number=$(read_state_field "goalIssueNumber")
+      # `Closes #N` auto-closes the umbrella goal issue on PR merge — that's
+      # how the dashboard learns the goal is done. Skip the line gracefully
+      # if no umbrella issue was ever opened (older goals from before this
+      # change, or `gh issue create` failed silently during a tick).
+      if [ -n "$goal_issue_number" ] && [ "$goal_issue_number" != "0" ]; then
+        body=$(printf "Final integration PR for goal **%s**.\n\nAll task issues are closed and merged into \`%s\`. Ready for review.\n\nCloses #%s\n" "$goal_id" "$goal_branch" "$goal_issue_number")
+      else
+        body=$(printf "Final integration PR for goal **%s**.\n\nAll task issues are closed and merged into \`%s\`. Ready for review.\n" "$goal_id" "$goal_branch")
+      fi
       goal_pr_url=$(gh pr create \
         --head "$goal_branch" \
         --base "$default_branch" \
@@ -285,6 +356,12 @@ else
     fi
   fi
 fi
+
+# The goal branch now exists (or the fallback path will be used). Open the
+# umbrella goal issue if we haven't yet, so the dashboard can render the goal
+# as an issue row with a "kody:building" status and the goal branch as its
+# preview. Idempotent — only the first call actually creates anything.
+ensure_goal_issue
 
 echo "[goal-tick] dispatching @kody on task #$next_issue (--base $goal_branch)"
 gh issue comment "$next_issue" --body "@kody --base ${goal_branch}"
