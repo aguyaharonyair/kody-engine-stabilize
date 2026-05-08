@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { deriveBranchName, UncommittedChangesError } from "../../src/branch.js"
-import { resolveBaseOverride } from "../../src/scripts/runFlow.js"
+import { resolveBaseFromLabels, resolveBaseOverride } from "../../src/scripts/runFlow.js"
 
 describe("branch: deriveBranchName", () => {
   it("slugifies title with issue number prefix", () => {
@@ -70,5 +70,40 @@ describe("runFlow: resolveBaseOverride", () => {
     expect(resolveBaseOverride("goal-foo/bar")).toBeNull() // slash
     expect(resolveBaseOverride("goal-foo bar")).toBeNull() // space
     expect(resolveBaseOverride("goal-")).toBeNull() // trailing dash with empty slug
+  })
+})
+
+describe("runFlow: resolveBaseFromLabels", () => {
+  // Labels are the durable signal because they survive the classify →
+  // bug/feature/chore container hop that strips comment-supplied flags.
+  // Both labels must be present: `goal-runner:dispatched` confirms the
+  // autonomous driver started this run, and `goal:<id>` names the branch.
+  it("returns goal-<id> when both labels present", () => {
+    expect(resolveBaseFromLabels(["goal-runner:dispatched", "goal:test-greet-chain"])).toBe("goal-test-greet-chain")
+  })
+
+  it("returns null when goal-runner:dispatched is missing", () => {
+    expect(resolveBaseFromLabels(["goal:test-greet-chain"])).toBeNull()
+  })
+
+  it("returns null when goal:<id> is missing", () => {
+    expect(resolveBaseFromLabels(["goal-runner:dispatched"])).toBeNull()
+  })
+
+  it("returns null when labels array is empty", () => {
+    expect(resolveBaseFromLabels([])).toBeNull()
+  })
+
+  it("rejects malformed goal ids (uppercase / spaces / slashes)", () => {
+    expect(resolveBaseFromLabels(["goal-runner:dispatched", "goal:Bad"])).toBeNull()
+    expect(resolveBaseFromLabels(["goal-runner:dispatched", "goal:foo/bar"])).toBeNull()
+    expect(resolveBaseFromLabels(["goal-runner:dispatched", "goal:foo bar"])).toBeNull()
+    expect(resolveBaseFromLabels(["goal-runner:dispatched", "goal:"])).toBeNull()
+  })
+
+  it("ignores other labels", () => {
+    expect(
+      resolveBaseFromLabels(["bug", "goal-runner:dispatched", "kody:running", "goal:abc-123"]),
+    ).toBe("goal-abc-123")
   })
 })

@@ -17,18 +17,26 @@ export const runFlow: PreflightScript = async (ctx) => {
   ctx.data.commentTargetType = "issue"
   ctx.data.commentTargetNumber = issueNumber
 
-  // Optional --base override (used by goal-tick to pass `goal-<id>` so the
-  // task feature branch forks from the shared goal branch and the PR targets
-  // it). Validate the value tightly — comment dispatch is the entry point,
-  // so an unrestricted base would let any commenter redirect kody at an
-  // arbitrary branch. Allowed pattern: `goal-<slug>` only.
+  // Resolve the base branch in two stages:
+  //   1. Issue labels — when goal-tick has dispatched this task, the issue
+  //      carries `goal-runner:dispatched` AND a `goal:<id>` label. We treat
+  //      that combo as the durable signal and fork from `goal-<id>`. This
+  //      survives the classify → bug/feature/chore container hop, which
+  //      strips comment-supplied flags, because the labels live on the
+  //      issue itself.
+  //   2. Optional --base CLI flag — kept as an explicit escape hatch and
+  //      validated against the goal-branch allowlist so comment-driven
+  //      dispatch can't redirect kody onto an arbitrary branch.
+  const labelBase = resolveBaseFromLabels(issue.labels ?? [])
+  const argBase = resolveBaseOverride(ctx.args.base as string | undefined)
   const baseRaw = ctx.args.base as string | undefined
-  const base = resolveBaseOverride(baseRaw)
-  if (baseRaw && !base) {
+  if (baseRaw && !argBase) {
     process.stderr.write(`[kody runFlow] ignoring --base "${baseRaw}" (must match /^goal-[a-z0-9-]+$/)\n`)
   }
+  const base = labelBase ?? argBase
   if (base) {
     ctx.data.baseBranch = base
+    process.stderr.write(`[kody runFlow] resolved base branch: ${base} (${labelBase ? "from labels" : "from --base"})\n`)
   }
 
   try {
@@ -68,4 +76,25 @@ function tryPost(issueNumber: number, body: string, cwd?: string): void {
 export function resolveBaseOverride(value: string | undefined): string | null {
   if (!value) return null
   return /^goal-[a-z0-9-]+$/.test(value) ? value : null
+}
+
+/**
+ * Derive the goal branch from issue labels. Active only when both signals
+ * are present:
+ *   - `goal-runner:dispatched` — confirms the goal-runner driver dispatched
+ *     this task (a manual @kody on a goal-labelled issue should keep the
+ *     per-issue / off-main flow).
+ *   - `goal:<id>` — names the goal whose shared branch we should fork from.
+ *
+ * Returns `goal-<id>` if both labels are found and the id is well-formed,
+ * else null. The well-formed check matches `resolveBaseOverride`'s allowlist
+ * so the eventual git fetch / fork can't be redirected by a malformed label.
+ */
+export function resolveBaseFromLabels(labels: string[]): string | null {
+  if (!labels.includes("goal-runner:dispatched")) return null
+  const goalLabel = labels.find((l) => l.startsWith("goal:"))
+  if (!goalLabel) return null
+  const goalId = goalLabel.slice("goal:".length)
+  if (!/^[a-z0-9-]+$/.test(goalId)) return null
+  return `goal-${goalId}`
 }
