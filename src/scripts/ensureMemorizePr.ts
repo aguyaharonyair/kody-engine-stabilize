@@ -55,14 +55,21 @@ export const ensureMemorizePr: PostflightScript = async (ctx) => {
 
   const existing = findExistingPr(branch, ctx.cwd)
   if (existing) {
+    // REST PATCH instead of `gh pr edit` — gh's edit path uses GraphQL
+    // which requires `read:org` scope on KODY_TOKEN. REST PATCH works
+    // with plain `repo` scope.
+    const stripped = existing.url.replace(/^https:\/\/github\.com\//, "")
+    const [owner, repo] = stripped.split("/")
     try {
-      gh(["pr", "edit", String(existing.number), "--body-file", "-"], { input: body, cwd: ctx.cwd })
+      gh(["api", "--method", "PATCH", `repos/${owner}/${repo}/pulls/${existing.number}`, "-f", `body=${body}`], {
+        cwd: ctx.cwd,
+      })
       ctx.output.prUrl = existing.url
       ctx.data.prResult = { url: existing.url, number: existing.number, action: "updated" }
       process.stdout.write(`[kody memorize] updated PR ${existing.url}\n`)
     } catch (err) {
       ctx.output.exitCode = 4
-      ctx.output.reason = `gh pr edit #${existing.number} failed: ${err instanceof Error ? err.message : String(err)}`
+      ctx.output.reason = `gh api PATCH #${existing.number} failed: ${err instanceof Error ? err.message : String(err)}`
     }
     return
   }

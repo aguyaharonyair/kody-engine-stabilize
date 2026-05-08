@@ -175,15 +175,23 @@ export function ensurePr(opts: EnsurePrOptions): PrResult {
     // Update body only — never rewrite the title on an existing PR. Past
     // regenerations stacked "[WIP] #N:" prefixes on each fix/fix-ci/resolve run
     // until the title was unreadable.
+    //
+    // Use REST PATCH instead of `gh pr edit`: gh's edit path uses GraphQL
+    // which requires `read:org` scope on KODY_TOKEN. REST PATCH works with
+    // plain `repo` scope (matching what release/deploy.sh already does).
+    const stripped = existing.url.replace(/^https:\/\/github\.com\//, "")
+    const [owner, repo] = stripped.split("/")
     try {
-      gh(["pr", "edit", String(existing.number), "--body-file", "-"], { input: body, cwd: opts.cwd })
+      gh(["api", "--method", "PATCH", `repos/${owner}/${repo}/pulls/${existing.number}`, "-f", `body=${body}`], {
+        cwd: opts.cwd,
+      })
     } catch (err) {
       // Let the caller decide how to handle this. The ensurePr script
       // already wraps doEnsurePr in try/catch and surfaces the error as
       // ctx.output.reason. Previously this was swallowed to stderr and
       // masked as a successful update, which buried the real cause of
       // downstream failures.
-      throw new Error(`gh pr edit #${existing.number} failed: ${err instanceof Error ? err.message : String(err)}`)
+      throw new Error(`gh api PATCH #${existing.number} failed: ${err instanceof Error ? err.message : String(err)}`)
     }
     return { url: existing.url, number: existing.number, draft: opts.draft, action: "updated" }
   }
