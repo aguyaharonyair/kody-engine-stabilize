@@ -121,8 +121,62 @@ export function ensureFeatureBranch(
     /* best effort */
   }
 
+  // When a base override is supplied (goal flow), an existing remote branch
+  // is only a valid resume target if it descends from origin/<base>. A
+  // cancelled prior run can leave behind a feature branch forked from main —
+  // reusing it would silently put the task on the wrong base. Detect that
+  // case and delete the stale ref so we re-fork below.
+  let originBranchExists = false
   try {
     git(["rev-parse", "--verify", `origin/${branchName}`], cwd)
+    originBranchExists = true
+  } catch {
+    /* not on remote */
+  }
+
+  if (originBranchExists && baseBranch && baseBranch !== defaultBranch) {
+    let baseExists = false
+    try {
+      git(["rev-parse", "--verify", `origin/${baseBranch}`], cwd)
+      baseExists = true
+    } catch {
+      /* base missing — leave the existing branch alone, fall through to checkout */
+    }
+    if (baseExists) {
+      let descendsFromBase = false
+      try {
+        git(["merge-base", "--is-ancestor", `origin/${baseBranch}`, `origin/${branchName}`], cwd)
+        descendsFromBase = true
+      } catch {
+        /* not a descendant */
+      }
+      if (!descendsFromBase) {
+        process.stderr.write(
+          `[kody branch] origin/${branchName} does not descend from origin/${baseBranch} — recreating from base\n`,
+        )
+        try {
+          git(["push", "origin", "--delete", branchName], cwd)
+        } catch {
+          /* may already be gone or no permission — continue and let the create path try */
+        }
+        try {
+          git(["update-ref", "-d", `refs/remotes/origin/${branchName}`], cwd)
+        } catch {
+          /* best effort cleanup of local tracking ref */
+        }
+        // Also delete a stale local branch by the same name — checkout -b
+        // below would otherwise fail with "branch already exists".
+        try {
+          git(["branch", "-D", branchName], cwd)
+        } catch {
+          /* probably no local branch — fine */
+        }
+        originBranchExists = false
+      }
+    }
+  }
+
+  if (originBranchExists) {
     git(["checkout", branchName], cwd)
     try {
       git(["pull", "origin", branchName], cwd)
@@ -130,8 +184,6 @@ export function ensureFeatureBranch(
       /* best effort */
     }
     return { branch: branchName, created: false }
-  } catch {
-    /* not on remote */
   }
 
   try {

@@ -38,6 +38,7 @@ import { memorizeFlow } from "./memorizeFlow.js"
 import { mergeReleasePr } from "./mergeReleasePr.js"
 import { mirrorStateToPr } from "./mirrorStateToPr.js"
 import { notifyTerminal } from "./notifyTerminal.js"
+import { openQaIssue } from "./openQaIssue.js"
 import { parseAgentResult } from "./parseAgentResult.js"
 import { parseIssueStateFromAgentResult } from "./parseIssueStateFromAgentResult.js"
 import { parseJobStateFromAgentResult } from "./parseJobStateFromAgentResult.js"
@@ -140,6 +141,7 @@ export const postflightScripts: Record<string, PostflightScript> = {
   recordClassification,
   dispatchClassified,
   notifyTerminal,
+  openQaIssue,
   recordOutcome,
   mergeReleasePr,
   waitForCi,
