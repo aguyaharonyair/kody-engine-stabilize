@@ -86,7 +86,39 @@ _QA by kody — browsed `{{args.url}}`{{#args.scope}} (focus: {{args.scope}}){{/
 
 ### Bottom line
 <one sentence>
+
+<!-- KODY_QA_REPORT_JSON
+```json
+{
+  "findings": [
+    {
+      "severity": "P1",
+      "title": "Short imperative title — what's broken",
+      "route": "/admin/...",
+      "steps": "1. Step one\n2. Step two\n3. Step three",
+      "expected": "What should happen",
+      "actual": "What actually happens. Cite console errors / API responses / screenshots.",
+      "evidence": ".kody/qa-reports/<scope>/<finding>.png"
+    }
+  ]
+}
 ```
+-->
+```
+
+# Required: structured findings block
+
+After the "Bottom line" section, you MUST emit one machine-readable block exactly as shown in the template above. The postflight uses it to open one severity-labelled GitHub issue per finding.
+
+Rules for the JSON block:
+- Every finding listed in the human-readable "Findings" section above MUST appear in the JSON `findings` array. No more, no fewer.
+- `severity` is one of `"P0"`, `"P1"`, `"P2"`, `"P3"` — must match the prefix in the markdown.
+- `title` is a concise imperative (5–12 words). It becomes the issue title — no `[Pn]` prefix here, the postflight adds it.
+- `steps`, `expected`, `actual` are required. `route` and `evidence` are optional but include them when applicable.
+- Use `\n` literal newlines inside string values (the JSON parser will handle them).
+- If you found zero defects (verdict PASS), emit `{"findings": []}`.
+
+If you don't include this block, the postflight falls back to opening a single record-style issue. That's acceptable when there are zero findings, but for any run with defects the block is mandatory — without it, individual findings won't get triageable tickets.
 
 # Severity rubric
 

@@ -12,6 +12,7 @@ import { checkCoverageWithRetry } from "./checkCoverageWithRetry.js"
 import { classifyByLabel } from "./classifyByLabel.js"
 import { commitAndPush } from "./commitAndPush.js"
 import { composePrompt } from "./composePrompt.js"
+import { createQaGoal } from "./createQaGoal.js"
 import { diagMcp } from "./diagMcp.js"
 import { discoverQaContext } from "./discoverQaContext.js"
 import { dispatch } from "./dispatch.js"
@@ -144,6 +145,7 @@ export const postflightScripts: Record<string, PostflightScript> = {
   dispatchClassified,
   notifyTerminal,
   openQaIssue,
+  createQaGoal,
   recordOutcome,
   mergeReleasePr,
   waitForCi,

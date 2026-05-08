@@ -85,7 +85,7 @@
       { "script": "composePrompt" }
     ],
     "postflight": [
-      { "script": "openQaIssue" }
+      { "script": "createQaGoal" }
     ]
   }
 }
