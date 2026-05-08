@@ -41,6 +41,35 @@ for state_file in "${state_files[@]}"; do
   active=$((active + 1))
   echo "[goal-scheduler] → tick $goal_id"
 
+  # Ensure the shared goal branch exists on origin before we tick. This is
+  # the integration target for every task PR under this goal. Idempotent:
+  # if origin/goal-<id> already exists we skip. We deliberately create from
+  # the latest origin/<defaultBranch> so the goal branch starts from a
+  # known-clean base; subsequent task PRs build on top.
+  goal_branch="goal-${goal_id}"
+  default_branch="${KODY_CFG_GIT_DEFAULTBRANCH:-main}"
+
+  # Best-effort fetch so origin refs are fresh.
+  git fetch origin --quiet 2>/dev/null || true
+
+  if git rev-parse --verify --quiet "refs/remotes/origin/${goal_branch}" >/dev/null 2>&1; then
+    echo "[goal-scheduler] origin/${goal_branch} already exists — leaving as-is"
+  else
+    if ! git rev-parse --verify --quiet "refs/remotes/origin/${default_branch}" >/dev/null 2>&1; then
+      echo "[goal-scheduler] cannot create goal branch: origin/${default_branch} missing"
+    else
+      echo "[goal-scheduler] creating origin/${goal_branch} from origin/${default_branch}"
+      # Push a new ref directly without checking it out — avoids touching the
+      # working tree, which other ticks/scripts in this same scheduler run
+      # may rely on. Failures here are logged and we proceed; goal-tick will
+      # still dispatch task issues, and ensureFeatureBranch will fall back to
+      # forking from defaultBranch when origin/goal-<id> is absent.
+      if ! git push origin "refs/remotes/origin/${default_branch}:refs/heads/${goal_branch}" --quiet 2>&1; then
+        echo "[goal-scheduler] push of ${goal_branch} failed (will retry next tick)"
+      fi
+    fi
+  fi
+
   # Run the tick. Top-level kody invocation is `kody <executable>` —
   # there's no `dispatch` subcommand. A non-zero exit logs and continues
   # so one stuck goal doesn't starve the rest of the schedule.

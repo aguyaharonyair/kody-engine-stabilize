@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { deriveBranchName, UncommittedChangesError } from "../../src/branch.js"
+import { resolveBaseOverride } from "../../src/scripts/runFlow.js"
 
 describe("branch: deriveBranchName", () => {
   it("slugifies title with issue number prefix", () => {
@@ -40,5 +41,34 @@ describe("branch: UncommittedChangesError", () => {
     expect(err.message).toMatch(/feat-branch/)
     expect(err.name).toBe("UncommittedChangesError")
     expect(err.branch).toBe("feat-branch")
+  })
+})
+
+describe("runFlow: resolveBaseOverride", () => {
+  // The --base override is the only way a comment can redirect kody onto a
+  // non-default branch. We allowlist the goal-branch convention specifically
+  // so the comment surface can't be abused to push to an arbitrary branch.
+  it("accepts a well-formed goal branch", () => {
+    expect(resolveBaseOverride("goal-add-chat-memory")).toBe("goal-add-chat-memory")
+    expect(resolveBaseOverride("goal-x")).toBe("goal-x")
+    expect(resolveBaseOverride("goal-1234")).toBe("goal-1234")
+  })
+
+  it("rejects empty / undefined", () => {
+    expect(resolveBaseOverride(undefined)).toBeNull()
+    expect(resolveBaseOverride("")).toBeNull()
+  })
+
+  it("rejects non-goal branches", () => {
+    expect(resolveBaseOverride("main")).toBeNull()
+    expect(resolveBaseOverride("feat/foo")).toBeNull()
+    expect(resolveBaseOverride("release-1.2")).toBeNull()
+  })
+
+  it("rejects values with disallowed characters", () => {
+    expect(resolveBaseOverride("goal-Bad")).toBeNull() // uppercase
+    expect(resolveBaseOverride("goal-foo/bar")).toBeNull() // slash
+    expect(resolveBaseOverride("goal-foo bar")).toBeNull() // space
+    expect(resolveBaseOverride("goal-")).toBeNull() // trailing dash with empty slug
   })
 })

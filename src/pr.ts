@@ -17,6 +17,13 @@ export interface EnsurePrOptions {
   changedFiles: string[]
   /** Agent-supplied PR_SUMMARY (multi-line, what the change does and why). */
   agentSummary?: string
+  /**
+   * Optional PR base override (e.g. `goal-<id>` so a task PR targets the
+   * shared goal branch instead of the repo default). Falls through to
+   * `defaultBranch` when absent. Goal-tick is the only intended caller; the
+   * runFlow allowlist enforces that.
+   */
+  baseBranch?: string
   cwd?: string
 }
 
@@ -181,13 +188,14 @@ export function ensurePr(opts: EnsurePrOptions): PrResult {
     return { url: existing.url, number: existing.number, draft: opts.draft, action: "updated" }
   }
 
+  const base = opts.baseBranch && opts.baseBranch.length > 0 ? opts.baseBranch : opts.defaultBranch
   const args = [
     "pr",
     "create",
     "--head",
     opts.branch,
     "--base",
-    opts.defaultBranch,
+    base,
     "--title",
     title,
     "--body-file",

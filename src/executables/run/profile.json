@@ -9,6 +9,13 @@
       "type": "int",
       "required": true,
       "describe": "GitHub issue number to implement."
+    },
+    {
+      "name": "base",
+      "flag": "--base",
+      "type": "string",
+      "required": false,
+      "describe": "Optional base branch override. Must match /^goal-[a-z0-9-]+$/; used by goal-tick so the feature branch forks from the shared goal branch and the PR targets it."
     }
   ],
   "claudeCode": {

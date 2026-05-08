@@ -96,7 +96,15 @@ export function ensureFeatureBranch(
   title: string,
   defaultBranch: string,
   cwd?: string,
+  baseBranch?: string,
 ): BranchResult {
+  // baseBranch: optional fork point. When provided (e.g. by goal-tick passing
+  // --base goal-<id>), a brand-new feature branch is forked from origin/<base>
+  // instead of origin/<defaultBranch>. If the feature branch already exists on
+  // origin (re-running run on the same issue), we still pull it as-is — the
+  // fork point only matters at creation time. The caller is responsible for
+  // ensuring the base branch exists on origin first; if it doesn't, fall back
+  // to defaultBranch so we don't crash.
   const branchName = deriveBranchName(issueNumber, title)
   const current = getCurrentBranch(cwd)
 
@@ -134,8 +142,24 @@ export function ensureFeatureBranch(
     /* not local either */
   }
 
+  // Resolve fork point: caller-supplied base (if it exists on origin), else
+  // defaultBranch. We verify origin/<base> rather than blindly trusting the
+  // arg so a stale or wrong --base doesn't make `git checkout -b` blow up.
+  let forkPoint = defaultBranch
+  if (baseBranch && baseBranch !== defaultBranch) {
+    try {
+      git(["rev-parse", "--verify", `origin/${baseBranch}`], cwd)
+      forkPoint = baseBranch
+    } catch {
+      // origin/<base> doesn't exist — silently fall back. The goal-tick is
+      // expected to have created the goal branch before dispatching, so
+      // this path should be rare. Logged in callers via the resulting
+      // branch name (still defaultBranch-derived).
+    }
+  }
+
   try {
-    git(["checkout", "-b", branchName, `origin/${defaultBranch}`], cwd)
+    git(["checkout", "-b", branchName, `origin/${forkPoint}`], cwd)
   } catch {
     git(["checkout", "-b", branchName], cwd)
   }

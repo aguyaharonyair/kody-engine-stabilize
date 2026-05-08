@@ -77,7 +77,7 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
   it("run profile loads cleanly with the expected shape", () => {
     const profile = loadProfile(path.join(EXE_ROOT, "run/profile.json"))
     expect(profile.name).toBe("run")
-    expect(profile.inputs.map((i) => i.name)).toEqual(["issue"])
+    expect(profile.inputs.map((i) => i.name)).toEqual(["issue", "base"])
     const preScripts = profile.scripts.preflight.map((p) => p.script)
     expect(preScripts[0]).toBe("setLifecycleLabel")
     expect(preScripts).toContain("runFlow")

@@ -44,6 +44,11 @@ export const ensurePr: PostflightScript = async (ctx) => {
   const targetNumber = Number(ctx.data.commentTargetNumber ?? 0)
   const title = issue?.title ?? pr?.title ?? `kody changes`
 
+  // baseBranch is set by runFlow when --base passed validation. Anything else
+  // (including a comment-supplied value that didn't match the allowlist) is
+  // dropped before reaching here, so passing through is safe.
+  const baseBranch = ctx.data.baseBranch as string | undefined
+
   try {
     const result = doEnsurePr({
       branch,
@@ -54,6 +59,7 @@ export const ensurePr: PostflightScript = async (ctx) => {
       failureReason: isFailure ? failureReason : undefined,
       changedFiles,
       agentSummary: ctx.data.prSummary as string | undefined,
+      baseBranch,
       cwd: ctx.cwd,
     })
     ctx.output.prUrl = result.url
