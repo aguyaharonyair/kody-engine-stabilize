@@ -65,6 +65,14 @@ export async function runAgent(opts: AgentOptions): Promise<AgentResult> {
     SKIP_HOOKS: "1",
     HUSKY: "0",
     CI: process.env.CI ?? "1",
+    // MCP servers are spawned asynchronously by the SDK. With the default
+    // non-blocking behavior, the SDK announces its tool list at session
+    // init while servers are still in `pending`, so their tools never
+    // reach the model. Block until each MCP completes its handshake (or
+    // the timeout below elapses) so the tool list is complete on first
+    // turn.
+    MCP_CONNECTION_NONBLOCKING: process.env.MCP_CONNECTION_NONBLOCKING ?? "false",
+    MCP_TIMEOUT: process.env.MCP_TIMEOUT ?? "60000",
   }
   if (opts.litellmUrl) {
     env.ANTHROPIC_BASE_URL = opts.litellmUrl
