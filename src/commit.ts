@@ -12,7 +12,7 @@ const FORBIDDEN_PATH_PREFIXES = [
 
 // Paths that override the forbidden-prefix check. `.kody/` is blanket-blocked
 // to keep agents out of runtime state and configs during run/fix/resolve, but
-// the `memorize` watch legitimately writes to `.kody/vault/` (the markdown
+// the `memorize` job legitimately writes to `.kody/vault/` (the markdown
 // knowledge base). Add narrow allowlist entries here, prefer-first.
 const ALLOWED_PATH_PREFIXES = [".kody/vault/"]
 

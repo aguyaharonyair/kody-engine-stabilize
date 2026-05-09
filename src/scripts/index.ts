@@ -19,7 +19,6 @@ import { dispatch } from "./dispatch.js"
 import { dispatchClassified } from "./dispatchClassified.js"
 import { dispatchJobFileTicks } from "./dispatchJobFileTicks.js"
 import { dispatchJobTicks } from "./dispatchJobTicks.js"
-import { ensureMemorizePr } from "./ensureMemorizePr.js"
 import { ensurePr } from "./ensurePr.js"
 import { finishFlow } from "./finishFlow.js"
 import { fixCiFlow } from "./fixCiFlow.js"
@@ -33,9 +32,7 @@ import { loadJobFromFile } from "./loadJobFromFile.js"
 import { loadPriorArt } from "./loadPriorArt.js"
 import { loadQaGuide } from "./loadQaGuide.js"
 import { loadTaskState } from "./loadTaskState.js"
-import { loadVaultContext } from "./loadVaultContext.js"
 import { markFlowSuccess } from "./markFlowSuccess.js"
-import { memorizeFlow } from "./memorizeFlow.js"
 import { mergeReleasePr } from "./mergeReleasePr.js"
 import { mirrorStateToPr } from "./mirrorStateToPr.js"
 import { notifyTerminal } from "./notifyTerminal.js"
@@ -87,9 +84,7 @@ export const preflightScripts: Record<string, PreflightScript> = {
   syncFlow,
   initFlow,
   watchStalePrsFlow,
-  memorizeFlow,
   loadTaskState,
-  loadVaultContext,
   loadIssueContext,
   loadIssueStateComment,
   loadJobFromFile,
@@ -129,7 +124,6 @@ export const postflightScripts: Record<string, PostflightScript> = {
   stageMergeConflicts,
   commitAndPush,
   ensurePr,
-  ensureMemorizePr,
   postIssueComment,
   postPlanComment,
   postResearchComment,
