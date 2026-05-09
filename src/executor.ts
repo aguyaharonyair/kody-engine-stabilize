@@ -15,6 +15,7 @@ import { runAgent } from "./agent.js"
 import type { KodyConfig } from "./config.js"
 import { loadConfig, parseProviderModel } from "./config.js"
 import type { ContainerChild, Context, InputSpec, Profile, ScriptEntry } from "./executables/types.js"
+import { KODY_NAMESPACE, removeLabel } from "./lifecycleLabels.js"
 import { startLitellmIfNeeded } from "./litellm.js"
 import { loadProfile, validateScriptReferences } from "./profile.js"
 import { resolveExecutable } from "./registry.js"
@@ -255,8 +256,28 @@ export async function runExecutable(profileName: string, input: ExecutorInput): 
       reason: ctx.output.reason,
     })
   } finally {
+    // Clear any kody:* lifecycle labels stamped by `setLifecycleLabel`
+    // preflight entries. Runs on every exit path (normal completion, hard
+    // preflight bail, thrown exception) so labels never strand a PR/issue
+    // outside the lifecycle taxonomy. Best-effort, never throws.
+    clearStampedLifecycleLabels(profile, ctx)
     try {
       litellm?.kill()
+    } catch {
+      /* best effort */
+    }
+  }
+}
+
+function clearStampedLifecycleLabels(profile: Profile, ctx: Context): void {
+  const target = (ctx.args.issue ?? ctx.args.pr) as number | undefined
+  if (typeof target !== "number" || !Number.isFinite(target)) return
+  for (const entry of profile.scripts.preflight) {
+    if (entry.script !== "setLifecycleLabel") continue
+    const label = typeof entry.with?.label === "string" ? entry.with.label : undefined
+    if (!label || !label.startsWith(KODY_NAMESPACE)) continue
+    try {
+      removeLabel(target, label, ctx.cwd)
     } catch {
       /* best effort */
     }

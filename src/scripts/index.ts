@@ -10,7 +10,6 @@ import { advanceFlow } from "./advanceFlow.js"
 import { buildSyntheticPlugin } from "./buildSyntheticPlugin.js"
 import { checkCoverageWithRetry } from "./checkCoverageWithRetry.js"
 import { classifyByLabel } from "./classifyByLabel.js"
-import { clearLifecycleLabel } from "./clearLifecycleLabel.js"
 import { commitAndPush } from "./commitAndPush.js"
 import { composePrompt } from "./composePrompt.js"
 import { createQaGoal } from "./createQaGoal.js"
@@ -147,7 +146,6 @@ export const postflightScripts: Record<string, PostflightScript> = {
   mergeReleasePr,
   waitForCi,
   markFlowSuccess,
-  clearLifecycleLabel,
 }
 
 export const allScriptNames: Set<string> = new Set([

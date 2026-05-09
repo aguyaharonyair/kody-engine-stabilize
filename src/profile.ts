@@ -222,22 +222,10 @@ function parseScripts(p: string, raw: unknown): Profile["scripts"] {
     throw new ProfileError(p, `"scripts" must be an object with preflight and postflight arrays`)
   }
   const r = raw as Record<string, unknown>
-  const preflight = parseScriptList(p, "preflight", r.preflight)
-  const postflight = parseScriptList(p, "postflight", r.postflight)
   return {
-    preflight,
-    postflight: pairLifecycleClears(preflight, postflight),
+    preflight: parseScriptList(p, "preflight", r.preflight),
+    postflight: parseScriptList(p, "postflight", r.postflight),
   }
-}
-
-// Auto-pair: every preflight `setLifecycleLabel` gets a matching
-// `clearLifecycleLabel` appended to postflight, so labels clear on
-// exit (success or failure) without per-profile boilerplate.
-function pairLifecycleClears(preflight: ScriptEntry[], postflight: ScriptEntry[]): ScriptEntry[] {
-  const clears = preflight
-    .filter((e) => e.script === "setLifecycleLabel" && typeof e.with?.label === "string")
-    .map((e) => ({ script: "clearLifecycleLabel", with: { label: e.with!.label as string } }))
-  return [...postflight, ...clears]
 }
 
 function parseInputArtifacts(p: string, raw: unknown): InputArtifactSpec[] {
