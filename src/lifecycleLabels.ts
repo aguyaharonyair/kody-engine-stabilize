@@ -20,8 +20,8 @@
  * Public surface:
  *   - setKodyLabel(n, spec, cwd): set the label on issue/PR #n, lazy-
  *     creating via spec's color/description if `gh` reports it missing.
- *   - removeKodyLabel(n, label, cwd): remove a kody-owned label from
- *     issue/PR #n. Refuses non-kody labels. Best-effort, never throws.
+ *   - removeLabel(n, label, cwd): remove a label from issue/PR #n.
+ *     Best-effort, never throws.
  *   - collectProfileLabels(): walk every profile's script entries and
  *     harvest `{label, color, description}` from their `with` blocks.
  *   - ensureLabels(cwd): at init time, `gh label create --force` every
@@ -126,7 +126,7 @@ function addLabel(issueNumber: number, label: string, cwd?: string): void {
   gh(["issue", "edit", String(issueNumber), "--add-label", label], { cwd })
 }
 
-function removeLabel(issueNumber: number, label: string, cwd?: string): void {
+export function removeLabel(issueNumber: number, label: string, cwd?: string): void {
   try {
     gh(["issue", "edit", String(issueNumber), "--remove-label", label], { cwd })
   } catch {
@@ -180,19 +180,6 @@ export function setKodyLabel(issueNumber: number, spec: KodyLabelSpec, cwd?: str
     }
     process.stderr.write(`[kody] setKodyLabel: failed to add ${target} on #${issueNumber}: ${errMsg(err)}\n`)
   }
-}
-
-/**
- * Remove a kody-owned label from issue/PR #n. Refuses non-kody labels
- * (mirrors setKodyLabel's safety check). Best-effort: a missing label
- * on the target is a no-op, errors are swallowed.
- */
-export function removeKodyLabel(issueNumber: number, label: string, cwd?: string): void {
-  if (!label.startsWith(KODY_NAMESPACE)) {
-    process.stderr.write(`[kody] removeKodyLabel: refusing to remove non-kody label "${label}"\n`)
-    return
-  }
-  removeLabel(issueNumber, label, cwd)
 }
 
 function looksLikeMissingLabel(err: unknown): boolean {
