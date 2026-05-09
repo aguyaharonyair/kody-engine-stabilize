@@ -47,8 +47,19 @@ If you fail to emit this block, or the JSON is invalid, the tick fails and the g
 ## Rules
 
 - Never edit, create, or delete files in the working tree.
-- Never commit or push.
+- Never commit or push via `git`. The only permitted commit path is `gh api -X PUT` against the report file (see exception below).
 - Only shell calls allowed: `gh`. Everything must go through it.
 - Keep each tick focused: do one action per candidate per wake. The cron will call you again.
 - If state says you're waiting on something, just check and re-emit — don't spawn a duplicate.
 - Honour the job body's `## Restrictions` over any inferred shortcut.
+
+### Single permitted write: the job's report file
+
+A job MAY (optionally — only if its body asks for it) write a single
+markdown report file at the canonical path:
+
+```
+.kody/reports/{{jobSlug}}.md
+```
+
+Only that exact path. Only via `gh api -X PUT /repos/<owner>/<repo>/contents/.kody/reports/{{jobSlug}}.md` (with base64 content + `sha` of the existing file when updating). All other writes — code files, other report paths, other slugs — remain forbidden. The dashboard's `/reports` page surfaces these files automatically; this is the canonical channel for a job's diagnostic output when an issue comment isn't expressive enough.
