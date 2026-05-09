@@ -20,6 +20,8 @@ This is the state you wrote at the end of the previous tick (or `null` if this i
 
 ## What to do on this tick
 
+`forceRun = {{args.force}}` — set to `true` when an operator clicked "Run now" on the dashboard. When `forceRun` is `true`, ignore the job body's `**Cadence guard.**` paragraph (or any equivalent "skip if last run was within X" rule) and execute the work as if the guard had passed. All other body rules — allowed commands, restrictions, state schema — still apply. Force only overrides cadence.
+
 1. **Check `done`.** If the prior state has `done: true`, emit the same state back unchanged and exit without any action.
 2. **Re-read the job body.** It may have changed since the last tick.
 3. **Execute exactly the work the body's `## Job` section describes**, subject to its `## Allowed Commands` and `## Restrictions`. Use the `## State` section to interpret and update `data`.
