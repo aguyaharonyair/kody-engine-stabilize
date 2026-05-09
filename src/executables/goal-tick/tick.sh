@@ -335,6 +335,16 @@ ensure_label "$failed_label" "b60205" "kody goal-runner: task failed; needs huma
 # counting child tasks, so list_goal_issues can filter it out cleanly.
 ensure_goal_issue
 
+# Open the draft goal PR if the goal branch already exists. Must run BEFORE
+# any of the early exits below (in_flight check, no-undispatched-task idle,
+# etc.) — otherwise active goals that always have a task in flight would
+# never get past the in_flight gate to reach the late call site, leaving
+# the umbrella row without its branch + preview anchor in the dashboard.
+# `ensure_goal_pr` is a safe no-op when the branch hasn't been created yet
+# (the lazy-branch-creation block at the dispatch site handles that case;
+# the next tick picks up the PR creation here).
+ensure_goal_pr
+
 # Merge ready goal-task PRs into the goal branch. We own the merge here
 # instead of relying on GitHub's `--auto` flag (which requires the repo's
 # "Allow auto-merge" setting and silently no-ops when disabled). Only merge
@@ -543,11 +553,8 @@ else
     fi
   fi
 fi
-
-# Open the draft goal PR now that the branch exists. The PR is the dashboard's
-# single anchor for the goal's branch + preview + CI; finalize promotes it
-# from draft to ready-for-review when every task has closed.
-ensure_goal_pr
+# (`ensure_goal_pr` runs at the top of the active path so it's reached even
+# when this tick exits early via the in_flight gate; not duplicated here.)
 
 echo "[goal-tick] dispatching @kody on task #$next_issue (--base $goal_branch)"
 gh issue comment "$next_issue" --body "@kody --base ${goal_branch}"
