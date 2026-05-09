@@ -31,7 +31,17 @@
 set -euo pipefail
 
 goal_id="${KODY_ARG_GOAL:-}"
-default_branch="${KODY_CFG_GIT_DEFAULTBRANCH:-main}"
+# Default branch: prefer KODY_CFG_GIT_DEFAULTBRANCH (config), then ask the
+# repo via the GitHub API, finally fall back to "main". Past regression: a
+# hardcoded "main" fallback opened goal PRs against `main` for repos whose
+# real default is `dev`, which then needed manual retargeting.
+default_branch="${KODY_CFG_GIT_DEFAULTBRANCH:-}"
+if [ -z "$default_branch" ]; then
+  default_branch=$(gh api "repos/{owner}/{repo}" --jq .default_branch 2>/dev/null || echo "")
+fi
+if [ -z "$default_branch" ]; then
+  default_branch="main"
+fi
 
 if [ -z "$goal_id" ]; then
   echo "KODY_REASON=missing --goal"
