@@ -136,6 +136,9 @@ async function decideShouldFire(
     return { skip: false, reason: "frontmatter unreadable" }
   }
   if (!every) return { skip: false, reason: "no schedule (every cron tick)" }
+  if (every === "manual") {
+    return { skip: true, reason: "manual-only (no auto-fire; trigger via dashboard Run now)" }
+  }
 
   let lastFiredAt: number | null = null
   try {

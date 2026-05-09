@@ -22,6 +22,11 @@ export type ScheduleEvery =
   | "1d"
   | "3d"
   | "7d"
+  /**
+   * Sentinel: the scheduler never auto-fires this job. Only manual triggers
+   * (workflow_dispatch via the dashboard "Run now" button) execute it.
+   */
+  | "manual"
 
 const SCHEDULE_EVERY_VALUES: readonly ScheduleEvery[] = [
   "15m",
@@ -33,6 +38,7 @@ const SCHEDULE_EVERY_VALUES: readonly ScheduleEvery[] = [
   "1d",
   "3d",
   "7d",
+  "manual",
 ] as const
 
 export interface JobFrontmatter {
@@ -79,6 +85,12 @@ export function scheduleEveryToMs(every: ScheduleEvery): number {
       return 3 * DAY
     case "7d":
       return 7 * DAY
+    case "manual":
+      // Sentinel: never auto-fires. Returning Infinity is defensive — callers
+      // (decideShouldFire) short-circuit before this branch is reached, but
+      // if someone wires a new path that compares "elapsed >= interval"
+      // they'll get a clean "never due" instead of a misleading 0.
+      return Number.POSITIVE_INFINITY
   }
 }
 
