@@ -124,10 +124,19 @@ PY
 }
 
 ensure_goal_issue() {
-  # Create the umbrella goal issue (once), label it goal:<id> + kody:building,
-  # and persist its number on state.json. Idempotent: if state already has
-  # goalIssueNumber, this is a no-op. The issue auto-closes when the final
-  # goal PR merges, via the `Closes #N` line we add to that PR body.
+  # Create-or-adopt the umbrella goal issue (once), label it goal:<id> +
+  # kody:building, and persist its number on state.json. The issue auto-closes
+  # when the final goal PR merges, via the `Closes #N` line we add to that PR
+  # body.
+  #
+  # Lookup order:
+  #   1. state.json `goalIssueNumber` — fast path.
+  #   2. Search GitHub for an existing umbrella by label `goal:<id>` + the
+  #      canonical title `goal: <goal_id>`. This is the recovery path when
+  #      state.json got wiped (e.g. dashboard pause/resume dropped the field
+  #      in older versions). Without this lookup we'd open a duplicate
+  #      umbrella every time goalIssueNumber goes missing.
+  #   3. Create a fresh umbrella as a last resort.
   local existing
   existing=$(read_state_field "goalIssueNumber")
   if [ -n "$existing" ] && [ "$existing" != "0" ]; then
@@ -142,20 +151,34 @@ ensure_goal_issue() {
   body=$(printf "Umbrella issue for goal **%s**.\n\nClosed automatically when the goal PR (\`%s\` → \`%s\`) merges.\n" \
     "$goal_id" "$goal_branch" "$default_branch")
 
-  # `gh issue create` prints the new issue's URL on stdout
-  # (https://github.com/<owner>/<repo>/issues/<n>). It does NOT support
-  # --json/--jq, so parse the trailing number off the URL.
-  local url
-  url=$(gh issue create \
-    --title "$title" \
-    --body "$body" \
-    --label "$label" \
-    --label "kody:building" 2>/dev/null || echo "")
+  # Recovery path: an umbrella may already exist from a prior run that lost
+  # state. Match strictly by label + exact title to avoid grabbing a child
+  # task issue. Prefer OPEN issues; fall back to closed ones (the umbrella
+  # could have been closed by a prior goal PR merge that we're now re-driving).
+  num=$(gh api \
+    "repos/{owner}/{repo}/issues?labels=${label}&state=all&per_page=100" \
+    --jq "[.[] | select(.pull_request == null) | select(.title == \"${title}\")] | (map(select(.state == \"open\")) + map(select(.state != \"open\")))[0].number // empty" \
+    2>/dev/null || echo "")
 
-  num="${url##*/}"
-  if [ -z "$num" ] || ! [[ "$num" =~ ^[0-9]+$ ]]; then
-    echo "[goal-tick] ensure_goal_issue: gh issue create failed (got '${url}') — continuing without umbrella issue"
-    return 0
+  if [ -n "$num" ] && [[ "$num" =~ ^[0-9]+$ ]]; then
+    echo "[goal-tick] adopted existing umbrella issue #${num} for ${goal_id}"
+  else
+    # `gh issue create` prints the new issue's URL on stdout
+    # (https://github.com/<owner>/<repo>/issues/<n>). It does NOT support
+    # --json/--jq, so parse the trailing number off the URL.
+    local url
+    url=$(gh issue create \
+      --title "$title" \
+      --body "$body" \
+      --label "$label" \
+      --label "kody:building" 2>/dev/null || echo "")
+
+    num="${url##*/}"
+    if [ -z "$num" ] || ! [[ "$num" =~ ^[0-9]+$ ]]; then
+      echo "[goal-tick] ensure_goal_issue: gh issue create failed (got '${url}') — continuing without umbrella issue"
+      return 0
+    fi
+    echo "[goal-tick] opened umbrella issue #${num} for ${goal_id}"
   fi
 
   python3 - "$state_file" "$num" <<'PY'
@@ -171,7 +194,6 @@ with open(path, "w") as f:
     json.dump(s, f, indent=2)
     f.write("\n")
 PY
-  echo "[goal-tick] opened umbrella issue #${num} for ${goal_id}"
 }
 
 list_goal_issues() {
