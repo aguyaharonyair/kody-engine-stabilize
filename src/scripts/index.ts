@@ -24,6 +24,7 @@ import { ensurePr } from "./ensurePr.js"
 import { finishFlow } from "./finishFlow.js"
 import { fixCiFlow } from "./fixCiFlow.js"
 import { fixFlow } from "./fixFlow.js"
+import { healthCheckFlow } from "./healthCheckFlow.js"
 import { initFlow } from "./initFlow.js"
 import { loadConventions } from "./loadConventions.js"
 import { loadCoverageRules } from "./loadCoverageRules.js"
@@ -86,6 +87,7 @@ export const preflightScripts: Record<string, PreflightScript> = {
   reviewFlow,
   syncFlow,
   initFlow,
+  healthCheckFlow,
   watchStalePrsFlow,
   memorizeFlow,
   loadTaskState,

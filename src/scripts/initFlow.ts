@@ -261,7 +261,7 @@ jobs:
     permissions:
       issues: write
       pull-requests: read
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
