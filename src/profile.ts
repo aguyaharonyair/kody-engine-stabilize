@@ -222,10 +222,38 @@ function parseScripts(p: string, raw: unknown): Profile["scripts"] {
     throw new ProfileError(p, `"scripts" must be an object with preflight and postflight arrays`)
   }
   const r = raw as Record<string, unknown>
+  const preflight = parseScriptList(p, "preflight", r.preflight)
+  const postflight = parseScriptList(p, "postflight", r.postflight)
   return {
-    preflight: parseScriptList(p, "preflight", r.preflight),
-    postflight: parseScriptList(p, "postflight", r.postflight),
+    preflight,
+    postflight: pairLifecycleClears(preflight, postflight),
   }
+}
+
+/**
+ * Auto-pair lifecycle labels: for every `setLifecycleLabel` entry in
+ * preflight, ensure a matching `clearLifecycleLabel` entry exists at the
+ * tail of postflight. Same `with.label` is used; idempotent (skips when
+ * a clear already exists for that label). This guarantees that any
+ * executable stamping a `kody:*` label clears it on exit — success or
+ * failure — without per-profile boilerplate.
+ */
+function pairLifecycleClears(preflight: ScriptEntry[], postflight: ScriptEntry[]): ScriptEntry[] {
+  const alreadyCleared = new Set<string>()
+  for (const e of postflight) {
+    if (e.script === "clearLifecycleLabel" && typeof e.with?.label === "string") {
+      alreadyCleared.add(e.with.label)
+    }
+  }
+  const out = [...postflight]
+  for (const e of preflight) {
+    if (e.script !== "setLifecycleLabel") continue
+    const label = typeof e.with?.label === "string" ? e.with.label : undefined
+    if (!label || alreadyCleared.has(label)) continue
+    out.push({ script: "clearLifecycleLabel", with: { label } })
+    alreadyCleared.add(label)
+  }
+  return out
 }
 
 function parseInputArtifacts(p: string, raw: unknown): InputArtifactSpec[] {

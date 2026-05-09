@@ -81,7 +81,9 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     const preScripts = profile.scripts.preflight.map((p) => p.script)
     expect(preScripts[0]).toBe("setLifecycleLabel")
     expect(preScripts).toContain("runFlow")
-    const names = profile.scripts.postflight.map((p) => p.script)
+    const names = profile.scripts.postflight
+      .filter((p) => p.script !== "clearLifecycleLabel")
+      .map((p) => p.script)
     // saveTaskState writes issue state, mirrorStateToPr propagates it to the
     // PR, advanceFlow re-triggers the orchestrator if a flow is active.
     expect(names).toContain("saveTaskState")
@@ -136,7 +138,7 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     const childExecs = (profile.children ?? []).map((c) => c.exec)
     expect(childExecs).toEqual(["reproduce", "plan", "run", "review", "fix"])
     // Postflight is finishFlow-only, gated on the last child's outcome.
-    const post = profile.scripts.postflight
+    const post = profile.scripts.postflight.filter((p) => p.script !== "clearLifecycleLabel")
     expect(post.at(-1)!.script).toBe("persistFlowState")
     const transitions = post.slice(0, -1)
     for (const entry of transitions) {
@@ -154,7 +156,7 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     const pre = profile.scripts.preflight.map((p) => p.script)
     expect(pre[0]).toBe("setLifecycleLabel")
     expect(pre.at(-1)).toBe("skipAgent")
-    const post = profile.scripts.postflight
+    const post = profile.scripts.postflight.filter((p) => p.script !== "clearLifecycleLabel")
     expect(post[0]!.script).toBe("startFlow")
     expect(post.at(-1)!.script).toBe("persistFlowState")
   })
@@ -180,7 +182,7 @@ describe("executor: split pipeline profiles are loadable + valid", () => {
     expect(pre).toContain("loadTaskState")
     const actualChildren = (profile.children ?? []).map((c) => c.exec)
     expect(actualChildren).toEqual(childExecs)
-    const post = profile.scripts.postflight
+    const post = profile.scripts.postflight.filter((p) => p.script !== "clearLifecycleLabel")
     expect(post.at(-1)!.script).toBe("persistFlowState")
     for (const entry of post.slice(0, -1)) {
       expect(entry.script).toBe("finishFlow")

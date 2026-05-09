@@ -10,6 +10,7 @@ import { advanceFlow } from "./advanceFlow.js"
 import { buildSyntheticPlugin } from "./buildSyntheticPlugin.js"
 import { checkCoverageWithRetry } from "./checkCoverageWithRetry.js"
 import { classifyByLabel } from "./classifyByLabel.js"
+import { clearLifecycleLabel } from "./clearLifecycleLabel.js"
 import { commitAndPush } from "./commitAndPush.js"
 import { composePrompt } from "./composePrompt.js"
 import { createQaGoal } from "./createQaGoal.js"
@@ -70,7 +71,6 @@ import { verify } from "./verify.js"
 import { verifyReproFails } from "./verifyReproFails.js"
 import { waitForCi } from "./waitForCi.js"
 import { warmupMcp } from "./warmupMcp.js"
-import { watchStalePrsFlow } from "./watchStalePrsFlow.js"
 import { writeIssueStateComment } from "./writeIssueStateComment.js"
 import { writeJobStateFile } from "./writeJobStateFile.js"
 import { writeRunSummary } from "./writeRunSummary.js"
@@ -84,7 +84,6 @@ export const preflightScripts: Record<string, PreflightScript> = {
   reviewFlow,
   syncFlow,
   initFlow,
-  watchStalePrsFlow,
   loadTaskState,
   loadIssueContext,
   loadIssueStateComment,
@@ -148,6 +147,7 @@ export const postflightScripts: Record<string, PostflightScript> = {
   mergeReleasePr,
   waitForCi,
   markFlowSuccess,
+  clearLifecycleLabel,
 }
 
 export const allScriptNames: Set<string> = new Set([
