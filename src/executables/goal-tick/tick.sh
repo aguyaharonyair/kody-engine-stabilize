@@ -251,6 +251,30 @@ ensure_label "$failed_label" "b60205" "kody goal-runner: task failed; needs huma
 # counting child tasks, so list_goal_issues can filter it out cleanly.
 ensure_goal_issue
 
+# Merge ready goal-task PRs into the goal branch. We own the merge here
+# instead of relying on GitHub's `--auto` flag (which requires the repo's
+# "Allow auto-merge" setting and silently no-ops when disabled). Only merge
+# non-draft PRs with mergeable=MERGEABLE and mergeStateStatus=CLEAN — i.e.
+# all required checks passed and there are no conflicts. Anything else
+# (BLOCKED, DIRTY, BEHIND, UNSTABLE, draft) is left for the operator.
+open_prs=$(gh pr list --base "$goal_branch" --state open --limit 50 \
+  --json number,isDraft,mergeable,mergeStateStatus 2>/dev/null || echo "[]")
+echo "$open_prs" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for pr in data:
+    if pr.get('isDraft'): continue
+    if pr.get('mergeable') != 'MERGEABLE': continue
+    if pr.get('mergeStateStatus') != 'CLEAN': continue
+    print(pr['number'])
+" | while read -r pr_num; do
+  [ -n "$pr_num" ] || continue
+  echo "[goal-tick] merging PR #${pr_num} into ${goal_branch}"
+  if ! gh pr merge "$pr_num" --squash --delete-branch >/dev/null 2>&1; then
+    echo "[goal-tick] failed to merge PR #${pr_num} (continuing)"
+  fi
+done
+
 # Close dispatched task issues whose PR has merged into the goal branch.
 # `Closes #N` in the PR body only auto-closes the issue when the PR merges
 # into the default branch — goal-task PRs target the goal branch, so we must
