@@ -196,6 +196,68 @@ with open(path, "w") as f:
 PY
 }
 
+ensure_goal_pr() {
+  # Open a draft goal PR (`goal-<id>` → default branch) early in the goal's
+  # life so the dashboard has a single anchor that ties together the umbrella
+  # issue, the goal branch, and the Vercel preview deploy. Without this PR,
+  # the umbrella issue is just a label-tagged issue with no link to its
+  # branch, so the dashboard can't surface preview/CI/branch on the umbrella
+  # row.
+  #
+  # Lifecycle:
+  #   - Created here as DRAFT on every active tick once origin/<goal_branch>
+  #     exists. Body carries `Closes #<umbrellaNumber>` so the umbrella
+  #     auto-closes on merge.
+  #   - Promoted to ready-for-review by the finalize path when all child
+  #     tasks close (see below).
+  #
+  # Lookup order:
+  #   1. state.json `goalPrUrl` — fast path; skip if already populated.
+  #   2. `gh pr list --head <goal_branch>` — recovery path when state.json
+  #      lost the field (e.g. older goals from before this change).
+  #   3. Create a fresh draft PR.
+  local existing_url existing_num
+  existing_url=$(read_state_field "goalPrUrl")
+  if [ -n "$existing_url" ]; then
+    return 0
+  fi
+
+  # Goal branch must exist on origin before we can open a PR.
+  if ! git ls-remote --exit-code --heads origin "$goal_branch" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # Recovery: PR may already exist from a prior tick that didn't persist the
+  # URL. Match by head ref.
+  existing_num=$(gh pr list --head "$goal_branch" --state open --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+  if [ -n "$existing_num" ] && [[ "$existing_num" =~ ^[0-9]+$ ]]; then
+    existing_url=$(gh pr view "$existing_num" --json url --jq .url 2>/dev/null || echo "")
+  else
+    local title body goal_issue_number
+    title="goal: ${goal_id}"
+    goal_issue_number=$(read_state_field "goalIssueNumber")
+    if [ -n "$goal_issue_number" ] && [ "$goal_issue_number" != "0" ]; then
+      body=$(printf "Tracking integration PR for goal **%s**.\n\nChild task PRs merge into \`%s\`. This PR is held in **draft** until every task is complete, then promoted to ready-for-review by goal-tick.\n\nCloses #%s\n" "$goal_id" "$goal_branch" "$goal_issue_number")
+    else
+      body=$(printf "Tracking integration PR for goal **%s**.\n\nChild task PRs merge into \`%s\`. Held in **draft** until every task is complete.\n" "$goal_id" "$goal_branch")
+    fi
+    existing_url=$(gh pr create \
+      --draft \
+      --head "$goal_branch" \
+      --base "$default_branch" \
+      --title "$title" \
+      --body "$body" 2>/dev/null || echo "")
+    if [ -z "$existing_url" ]; then
+      echo "[goal-tick] ensure_goal_pr: gh pr create failed (continuing without goal PR)"
+      return 0
+    fi
+    echo "[goal-tick] opened draft goal PR ${existing_url} for ${goal_id}"
+  fi
+
+  # Persist URL into state.json so subsequent ticks skip the lookup.
+  set_state_field "goalPrUrl" "$existing_url"
+}
+
 list_goal_issues() {
   # Up to 100 goal-labelled issues. PRs filtered out. Also filters out the
   # umbrella goal issue (if any) — it shares the `goal:<id>` label so the
@@ -348,31 +410,43 @@ open_count=$(echo "$issues_json" | python3 -c "import json,sys; print(sum(1 for 
 if [ "$open_count" = "0" ]; then
   echo "[goal-tick] all $total task(s) closed — finalising goal"
 
-  # Open the goal PR if it doesn't already exist. We only care about origin/<goal_branch>:
-  # the goal branch should exist (created by goal-scheduler). If not, log and skip
-  # PR creation but still mark state=done so the goal moves out of `active`.
+  # Promote (or open) the goal PR. The active path opens this PR as a draft
+  # once the goal branch exists, so by finalize it almost always already
+  # exists — we just mark it ready-for-review and refresh the body. Older
+  # goals from before the early-PR change may still need first-time creation
+  # here as a fallback.
   goal_pr_url=""
   if git ls-remote --exit-code --heads origin "$goal_branch" >/dev/null 2>&1; then
-    existing_pr=$(gh pr list --head "$goal_branch" --state open --json number,url --jq '.[0]' 2>/dev/null || echo "")
+    existing_pr=$(gh pr list --head "$goal_branch" --state open --json number,url,isDraft --jq '.[0]' 2>/dev/null || echo "")
+    title="goal: ${goal_id}"
+    goal_issue_number=$(read_state_field "goalIssueNumber")
+    # `Closes #N` auto-closes the umbrella goal issue on PR merge — that's
+    # how the dashboard learns the goal is done. Skip the line gracefully
+    # if no umbrella issue was ever opened (older goals from before this
+    # change, or `gh issue create` failed silently during a tick).
+    if [ -n "$goal_issue_number" ] && [ "$goal_issue_number" != "0" ]; then
+      body=$(printf "Final integration PR for goal **%s**.\n\nAll task issues are closed and merged into \`%s\`. Ready for review.\n\nCloses #%s\n" "$goal_id" "$goal_branch" "$goal_issue_number")
+    else
+      body=$(printf "Final integration PR for goal **%s**.\n\nAll task issues are closed and merged into \`%s\`. Ready for review.\n" "$goal_id" "$goal_branch")
+    fi
     if [ -z "$existing_pr" ] || [ "$existing_pr" = "null" ]; then
-      title="goal: ${goal_id}"
-      goal_issue_number=$(read_state_field "goalIssueNumber")
-      # `Closes #N` auto-closes the umbrella goal issue on PR merge — that's
-      # how the dashboard learns the goal is done. Skip the line gracefully
-      # if no umbrella issue was ever opened (older goals from before this
-      # change, or `gh issue create` failed silently during a tick).
-      if [ -n "$goal_issue_number" ] && [ "$goal_issue_number" != "0" ]; then
-        body=$(printf "Final integration PR for goal **%s**.\n\nAll task issues are closed and merged into \`%s\`. Ready for review.\n\nCloses #%s\n" "$goal_id" "$goal_branch" "$goal_issue_number")
-      else
-        body=$(printf "Final integration PR for goal **%s**.\n\nAll task issues are closed and merged into \`%s\`. Ready for review.\n" "$goal_id" "$goal_branch")
-      fi
       goal_pr_url=$(gh pr create \
         --head "$goal_branch" \
         --base "$default_branch" \
         --title "$title" \
         --body "$body" 2>/dev/null || echo "")
     else
+      existing_num=$(echo "$existing_pr" | python3 -c "import json,sys; print(json.load(sys.stdin).get('number',''))")
       goal_pr_url=$(echo "$existing_pr" | python3 -c "import json,sys; print(json.load(sys.stdin).get('url',''))")
+      is_draft=$(echo "$existing_pr" | python3 -c "import json,sys; print('true' if json.load(sys.stdin).get('isDraft') else 'false')")
+      # Refresh the body with the finalize copy so reviewers see the right
+      # framing. Best-effort — failure is non-fatal.
+      gh pr edit "$existing_num" --body "$body" >/dev/null 2>&1 || true
+      if [ "$is_draft" = "true" ]; then
+        echo "[goal-tick] promoting draft goal PR #${existing_num} to ready-for-review"
+        gh pr ready "$existing_num" >/dev/null 2>&1 \
+          || echo "[goal-tick] failed to mark PR #${existing_num} ready (continuing)"
+      fi
     fi
   else
     echo "[goal-tick] goal branch ${goal_branch} not found on origin — skipping final PR"
@@ -469,6 +543,11 @@ else
     fi
   fi
 fi
+
+# Open the draft goal PR now that the branch exists. The PR is the dashboard's
+# single anchor for the goal's branch + preview + CI; finalize promotes it
+# from draft to ready-for-review when every task has closed.
+ensure_goal_pr
 
 echo "[goal-tick] dispatching @kody on task #$next_issue (--base $goal_branch)"
 gh issue comment "$next_issue" --body "@kody --base ${goal_branch}"
