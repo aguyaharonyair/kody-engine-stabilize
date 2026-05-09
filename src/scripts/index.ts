@@ -29,6 +29,7 @@ import { loadCoverageRules } from "./loadCoverageRules.js"
 import { loadIssueContext } from "./loadIssueContext.js"
 import { loadIssueStateComment } from "./loadIssueStateComment.js"
 import { loadJobFromFile } from "./loadJobFromFile.js"
+import { loadMemoryContext } from "./loadMemoryContext.js"
 import { loadPriorArt } from "./loadPriorArt.js"
 import { loadQaGuide } from "./loadQaGuide.js"
 import { loadTaskState } from "./loadTaskState.js"
@@ -90,6 +91,7 @@ export const preflightScripts: Record<string, PreflightScript> = {
   loadJobFromFile,
   loadConventions,
   loadCoverageRules,
+  loadMemoryContext,
   loadPriorArt,
   loadQaGuide,
   buildSyntheticPlugin,

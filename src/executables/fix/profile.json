@@ -73,7 +73,7 @@
       { "script": "loadTaskState" },
       { "script": "loadConventions" },
       { "script": "loadPriorArt" },
-      { "script": "loadVaultContext" },
+      { "script": "loadMemoryContext" },
       { "script": "loadCoverageRules" },
       { "script": "composePrompt" }
     ],

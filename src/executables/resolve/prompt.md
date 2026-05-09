@@ -9,7 +9,7 @@ You are Kody, an autonomous engineer. A `git merge origin/{{baseBranch}}` into P
 
 {{conflictedFiles}}
 
-{{preferBlock}}{{conventionsBlock}}{{vaultContext}}{{toolsUsage}}# Working-tree conflict markers (truncated)
+{{preferBlock}}{{conventionsBlock}}{{memoryContext}}{{toolsUsage}}# Working-tree conflict markers (truncated)
 
 {{conflictMarkersPreview}}
 
