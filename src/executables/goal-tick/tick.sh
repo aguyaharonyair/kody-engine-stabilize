@@ -379,6 +379,12 @@ for pr in data:
   fi
 done
 
+# Retry ensure_goal_pr after the merge step. The early call at line ~356
+# fails when the goal branch has 0 commits ahead of default. If THIS tick
+# just merged a task PR, the branch now has a delta and `gh pr create`
+# will succeed. Idempotent — early-returns if the PR was already created.
+ensure_goal_pr
+
 # Close dispatched task issues whose PR has merged into the goal branch.
 # `Closes #N` in the PR body only auto-closes the issue when the PR merges
 # into the default branch — goal-task PRs target the goal branch, so we must
