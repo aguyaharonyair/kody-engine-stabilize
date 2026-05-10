@@ -36,7 +36,10 @@ describe("resolveQaUrl", () => {
 
   it("uses --url when provided, ignoring everything else", async () => {
     process.env.PREVIEW_URL = "https://env.example.com"
-    const ctx = makeCtx({ url: "https://explicit.example.com", goal: "some-goal" }, { fallbackUrl: "https://fallback.example.com" })
+    const ctx = makeCtx(
+      { url: "https://explicit.example.com", goal: "some-goal" },
+      { fallbackUrl: "https://fallback.example.com" },
+    )
     await resolveQaUrl(ctx, stubProfile)
     expect(ctx.data.previewUrl).toBe("https://explicit.example.com")
     expect(ctx.data.previewUrlSource).toBe("--url flag")

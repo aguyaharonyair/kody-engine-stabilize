@@ -546,9 +546,7 @@ describe("container: failure-shape regression suite", () => {
     // container should synthesize <EXEC>_COMPLETED so routing keys match.
     const root = makeContainerFixture({
       containerName: "noop-ok",
-      children: [
-        { exec: "noop", target: "issue", next: { NOOP_COMPLETED: "done", "*": "abort" } },
-      ],
+      children: [{ exec: "noop", target: "issue", next: { NOOP_COMPLETED: "done", "*": "abort" } }],
     })
 
     const env = makeMockEnvironment([{ exec: "noop", onInvoke: () => null, exitCode: 0 }])

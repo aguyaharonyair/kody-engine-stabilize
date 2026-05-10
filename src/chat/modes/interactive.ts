@@ -68,7 +68,9 @@ export async function runInteractiveMode(opts: InteractiveModeOptions): Promise<
   const serverUrl = process.env.GITHUB_SERVER_URL ?? "https://github.com"
   const runUrl = runId && repository ? `${serverUrl}/${repository}/actions/runs/${runId}` : undefined
 
-  process.stdout.write(`→ kody:chat:interactive: emitting chat.ready (idleExitMs=${idleExitMs}, hardCapMs=${hardCapMs}, runUrl=${runUrl ?? "n/a"})\n`)
+  process.stdout.write(
+    `→ kody:chat:interactive: emitting chat.ready (idleExitMs=${idleExitMs}, hardCapMs=${hardCapMs}, runUrl=${runUrl ?? "n/a"})\n`,
+  )
   await emit(opts.sink, "chat.ready", opts.sessionId, "ready", {
     sessionId: opts.sessionId,
     startedAt: new Date(startedAt).toISOString(),

@@ -187,12 +187,15 @@ function lineStream(stream: NodeJS.ReadableStream): { next: (timeoutMs: number) 
           return
         }
         waiter = resolve
-        const t = setTimeout(() => {
-          if (waiter === resolve) {
-            waiter = null
-            resolve(null)
-          }
-        }, Math.max(0, timeoutMs))
+        const t = setTimeout(
+          () => {
+            if (waiter === resolve) {
+              waiter = null
+              resolve(null)
+            }
+          },
+          Math.max(0, timeoutMs),
+        )
         t.unref?.()
       }),
   }

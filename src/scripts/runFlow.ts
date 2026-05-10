@@ -36,11 +36,19 @@ export const runFlow: PreflightScript = async (ctx) => {
   const base = labelBase ?? argBase
   if (base) {
     ctx.data.baseBranch = base
-    process.stderr.write(`[kody runFlow] resolved base branch: ${base} (${labelBase ? "from labels" : "from --base"})\n`)
+    process.stderr.write(
+      `[kody runFlow] resolved base branch: ${base} (${labelBase ? "from labels" : "from --base"})\n`,
+    )
   }
 
   try {
-    const branchInfo = ensureFeatureBranch(issueNumber, issue.title, ctx.config.git.defaultBranch, ctx.cwd, base ?? undefined)
+    const branchInfo = ensureFeatureBranch(
+      issueNumber,
+      issue.title,
+      ctx.config.git.defaultBranch,
+      ctx.cwd,
+      base ?? undefined,
+    )
     ctx.data.branch = branchInfo.branch
   } catch (err) {
     if (err instanceof UncommittedChangesError) {

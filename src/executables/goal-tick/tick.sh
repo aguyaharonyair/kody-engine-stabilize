@@ -37,7 +37,7 @@ goal_id="${KODY_ARG_GOAL:-}"
 # real default is `dev`, which then needed manual retargeting.
 default_branch="${KODY_CFG_GIT_DEFAULTBRANCH:-}"
 if [ -z "$default_branch" ]; then
-  default_branch=$(gh api "repos/{owner}/{repo}" --jq .default_branch 2>/dev/null || echo "")
+  default_branch=$(gh_capture api "repos/{owner}/{repo}" --jq .default_branch || true)
 fi
 if [ -z "$default_branch" ]; then
   default_branch="main"
@@ -104,6 +104,29 @@ with open(path, "w") as f:
 PY
 }
 
+# gh_capture — run a gh command, capturing stdout. On non-zero exit, log both the
+# gh invocation prefix and the captured stderr to CI logs so failures are
+# diagnosable. Returns stdout (or empty string) on failure so callers keep their
+# `|| true` shape unchanged.
+gh_capture() {
+  local _out
+  if _out=$(gh "$@" 2>&1); then
+    echo "$_out"
+  else
+    # gh wrote something to stderr — log the invocation prefix and the captured
+    # output so CI grep can find the failing command and the error message.
+    echo "[goal-tick] $*" >&2
+    [ -z "$_out" ] || echo "$_out" >&2
+    echo ""
+  fi
+}
+
+# gh_pr_list_json — thin wrapper around gh_capture for gh pr list calls so
+# callers can use the result directly without duplicating the capture logic.
+gh_pr_list_json() {
+  gh_capture pr list "$@"
+}
+
 commit_state() {
   # commit_state <message>  — best-effort commit + push.
   git add "$state_file"
@@ -165,10 +188,10 @@ ensure_goal_issue() {
   # state. Match strictly by label + exact title to avoid grabbing a child
   # task issue. Prefer OPEN issues; fall back to closed ones (the umbrella
   # could have been closed by a prior goal PR merge that we're now re-driving).
-  num=$(gh api \
+  num=$(gh_capture api \
     "repos/{owner}/{repo}/issues?labels=${label}&state=all&per_page=100" \
     --jq "[.[] | select(.pull_request == null) | select(.title == \"${title}\")] | (map(select(.state == \"open\")) + map(select(.state != \"open\")))[0].number // empty" \
-    2>/dev/null || echo "")
+    || true)
 
   if [ -n "$num" ] && [[ "$num" =~ ^[0-9]+$ ]]; then
     echo "[goal-tick] adopted existing umbrella issue #${num} for ${goal_id}"
@@ -177,11 +200,11 @@ ensure_goal_issue() {
     # (https://github.com/<owner>/<repo>/issues/<n>). It does NOT support
     # --json/--jq, so parse the trailing number off the URL.
     local url
-    url=$(gh issue create \
+    url=$(gh_capture issue create \
       --title "$title" \
       --body "$body" \
       --label "$label" \
-      --label "kody:building" 2>/dev/null || echo "")
+      --label "kody:building" || true)
 
     num="${url##*/}"
     if [ -z "$num" ] || ! [[ "$num" =~ ^[0-9]+$ ]]; then
@@ -226,7 +249,7 @@ ensure_goal_pr() {
   #   2. `gh pr list --head <goal_branch>` — recovery path when state.json
   #      lost the field (e.g. older goals from before this change).
   #   3. Create a fresh draft PR.
-  local existing_url existing_num
+  local existing_url
   existing_url=$(read_state_field "goalPrUrl")
   if [ -n "$existing_url" ]; then
     return 0
@@ -238,25 +261,27 @@ ensure_goal_pr() {
   fi
 
   # Recovery: PR may already exist from a prior tick that didn't persist the
-  # URL. Match by head ref.
-  existing_num=$(gh pr list --head "$goal_branch" --state open --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
-  if [ -n "$existing_num" ] && [[ "$existing_num" =~ ^[0-9]+$ ]]; then
-    existing_url=$(gh pr view "$existing_num" --json url --jq .url 2>/dev/null || echo "")
+  # URL. Match by head ref. Call gh pr list once and reuse the result.
+  local existing_pr_json
+  existing_pr_json=$(gh_pr_list_json --head "$goal_branch" --state open --json number,url --jq '.[0] // empty')
+  if [ -n "$existing_pr_json" ] && [ "$existing_pr_json" != "null" ]; then
+    existing_url=$(echo "$existing_pr_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('url',''))")
   else
-    local title body goal_issue_number
+    local title body
     title="goal: ${goal_id}"
+    local goal_issue_number
     goal_issue_number=$(read_state_field "goalIssueNumber")
     if [ -n "$goal_issue_number" ] && [ "$goal_issue_number" != "0" ]; then
       body=$(printf "Tracking integration PR for goal **%s**.\n\nChild task PRs merge into \`%s\`. This PR is held in **draft** until every task is complete, then promoted to ready-for-review by goal-tick.\n\nCloses #%s\n" "$goal_id" "$goal_branch" "$goal_issue_number")
     else
       body=$(printf "Tracking integration PR for goal **%s**.\n\nChild task PRs merge into \`%s\`. Held in **draft** until every task is complete.\n" "$goal_id" "$goal_branch")
     fi
-    existing_url=$(gh pr create \
+    existing_url=$(gh_capture pr create \
       --draft \
       --head "$goal_branch" \
       --base "$default_branch" \
       --title "$title" \
-      --body "$body" 2>/dev/null || echo "")
+      --body "$body" || true)
     if [ -z "$existing_url" ]; then
       echo "[goal-tick] ensure_goal_pr: gh pr create failed (continuing without goal PR)"
       return 0
@@ -314,11 +339,19 @@ for i in data:
   done
 
   # Close the goal PR if one is open.
-  goal_pr=$(gh pr list --head "$goal_branch" --state open --json number --jq '.[0].number // empty' 2>/dev/null || echo "")
+  goal_pr=$(gh_capture pr list --head "$goal_branch" --state open --json number --jq '.[0].number // empty' || true)
   if [ -n "$goal_pr" ]; then
     gh pr close "$goal_pr" --comment "_Goal abandoned by operator — closing without merge._" >/dev/null 2>&1 || true
   fi
 
+  # Compute in_flight once for the phase line.
+  in_flight=$(echo "$issues_json" | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+print(sum(1 for i in data if i['state'] == 'OPEN' and 'goal-runner:dispatched' in i['labels']))
+" 2>/dev/null || echo "0")
+
+  echo "[goal-tick] phase=abandoned in_flight=${in_flight} last_action=cleanup"
   set_state_field "state" "closed"
   commit_state "chore(goals): abandon ${goal_id} (cleanup complete)"
   echo "KODY_SKIP_AGENT=true"
@@ -326,6 +359,9 @@ for i in data:
 fi
 
 if [ "$state" != "active" ]; then
+  # Compute in_flight for phase line (state is non-active so no dispatched tasks expected).
+  in_flight="0"
+  echo "[goal-tick] phase=inactive in_flight=${in_flight} last_action=skip"
   echo "[goal-tick] $goal_id is '$state' — skipping"
   echo "KODY_SKIP_AGENT=true"
   exit 0
@@ -361,8 +397,8 @@ ensure_goal_pr
 # non-draft PRs with mergeable=MERGEABLE and mergeStateStatus=CLEAN — i.e.
 # all required checks passed and there are no conflicts. Anything else
 # (BLOCKED, DIRTY, BEHIND, UNSTABLE, draft) is left for the operator.
-open_prs=$(gh pr list --base "$goal_branch" --state open --limit 50 \
-  --json number,isDraft,mergeable,mergeStateStatus 2>/dev/null || echo "[]")
+open_prs=$(gh_capture pr list --base "$goal_branch" --state open --limit 50 \
+  --json number,isDraft,mergeable,mergeStateStatus || true)
 echo "$open_prs" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -392,7 +428,7 @@ ensure_goal_pr
 # the goal stalls after task 1. We accept the linkage from either:
 #   - `Closes|Fixes|Resolves #N` in the PR body (authoritative), OR
 #   - leading number on the head ref (kody convention: `<issue>-<slug>`).
-merged_prs=$(gh pr list --base "$goal_branch" --state merged --limit 50 --json number,headRefName,body 2>/dev/null || echo "[]")
+merged_prs=$(gh_capture pr list --base "$goal_branch" --state merged --limit 50 --json number,headRefName,body || true)
 echo "$merged_prs" | python3 -c "
 import json, re, sys
 data = json.load(sys.stdin)
@@ -412,7 +448,7 @@ for pr in data:
         print(n)
 " | while read -r issue_num; do
   [ -n "$issue_num" ] || continue
-  state=$(gh issue view "$issue_num" --json state --jq .state 2>/dev/null || echo "")
+  state=$(gh_capture issue view "$issue_num" --json state --jq .state || true)
   if [ "$state" = "OPEN" ]; then
     echo "[goal-tick] closing #${issue_num} (PR merged into ${goal_branch})"
     gh issue close "$issue_num" \
@@ -424,6 +460,8 @@ done
 issues_json=$(list_goal_issues)
 total=$(echo "$issues_json" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")
 if [ "$total" = "0" ]; then
+  # Emit phase line before exiting (in_flight is 0 when there are no issues).
+  echo "[goal-tick] phase=idle in_flight=0 last_action=idle"
   echo "[goal-tick] no issues with label '$label' — leaving state untouched"
   echo "KODY_SKIP_AGENT=true"
   exit 0
@@ -443,7 +481,8 @@ if [ "$open_count" = "0" ]; then
   # here as a fallback.
   goal_pr_url=""
   if git ls-remote --exit-code --heads origin "$goal_branch" >/dev/null 2>&1; then
-    existing_pr=$(gh pr list --head "$goal_branch" --state open --json number,url,isDraft --jq '.[0]' 2>/dev/null || echo "")
+    # Check if goal branch exists and look for existing PR in one call.
+    existing_pr=$(gh_pr_list_json --head "$goal_branch" --state open --json number,url,isDraft --jq '.[0] // empty')
     title="goal: ${goal_id}"
     goal_issue_number=$(read_state_field "goalIssueNumber")
     # `Closes #N` auto-closes the umbrella goal issue on PR merge — that's
@@ -456,11 +495,11 @@ if [ "$open_count" = "0" ]; then
       body=$(printf "Final integration PR for goal **%s**.\n\nAll task issues are closed and merged into \`%s\`. Ready for review.\n" "$goal_id" "$goal_branch")
     fi
     if [ -z "$existing_pr" ] || [ "$existing_pr" = "null" ]; then
-      goal_pr_url=$(gh pr create \
+      goal_pr_url=$(gh_capture pr create \
         --head "$goal_branch" \
         --base "$default_branch" \
         --title "$title" \
-        --body "$body" 2>/dev/null || echo "")
+        --body "$body" || true)
     else
       existing_num=$(echo "$existing_pr" | python3 -c "import json,sys; print(json.load(sys.stdin).get('number',''))")
       goal_pr_url=$(echo "$existing_pr" | python3 -c "import json,sys; print(json.load(sys.stdin).get('url',''))")
@@ -494,6 +533,7 @@ with open(path, "w") as f:
     json.dump(s, f, indent=2)
     f.write("\n")
 PY
+  echo "[goal-tick] phase=done in_flight=0 last_action=finalize"
   commit_state "chore(goals): mark $goal_id done"
   echo "KODY_SKIP_AGENT=true"
   exit 0
@@ -506,6 +546,7 @@ data = json.load(sys.stdin)
 print(sum(1 for i in data if 'goal-runner:failed' in i['labels']))
 ")
 if [ "$failed_count" != "0" ]; then
+  echo "[goal-tick] phase=blocked in_flight=${in_flight} last_action=blocked"
   echo "[goal-tick] $failed_count failed task(s) — staying idle until cleared"
   bump_updated_at
   commit_state "chore(goals): tick $goal_id (blocked by failed task)"
@@ -522,6 +563,7 @@ data = json.load(sys.stdin)
 print(sum(1 for i in data if i['state'] == 'OPEN' and 'goal-runner:dispatched' in i['labels']))
 ")
 if [ "$in_flight" != "0" ]; then
+  echo "[goal-tick] phase=waiting in_flight=${in_flight} last_action=waiting"
   echo "[goal-tick] $in_flight task(s) in flight — waiting for current task to merge into ${goal_branch}"
   bump_updated_at
   commit_state "chore(goals): tick $goal_id (waiting for in-flight task)"
@@ -543,6 +585,7 @@ print(opens[0]['number'] if opens else '')
 ")
 
 if [ -z "$next_issue" ]; then
+  echo "[goal-tick] phase=idle in_flight=0 last_action=idle"
   echo "[goal-tick] no undispatched open task — idle"
   bump_updated_at
   commit_state "chore(goals): tick $goal_id (idle)"
@@ -590,6 +633,7 @@ with open(path, "w") as f:
     json.dump(s, f, indent=2)
     f.write("\n")
 PY
+echo "[goal-tick] phase=active in_flight=${in_flight} last_action=dispatch"
 commit_state "chore(goals): dispatched #${next_issue} for ${goal_id}"
 
 echo "KODY_SKIP_AGENT=true"

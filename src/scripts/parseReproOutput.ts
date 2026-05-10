@@ -70,10 +70,7 @@ export const parseReproOutput: PostflightScript = async (ctx, _profile, agentRes
   }
 
   if (!signature) {
-    downgrade(
-      ctx,
-      "reproduce missing or malformed FAILURE_SIGNATURE JSON (must contain errorType + messageContains)",
-    )
+    downgrade(ctx, "reproduce missing or malformed FAILURE_SIGNATURE JSON (must contain errorType + messageContains)")
     return
   }
 

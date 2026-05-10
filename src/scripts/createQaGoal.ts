@@ -281,7 +281,12 @@ function createOrUpdateManifestIssue(
     input: body,
     cwd,
   })
-  const url = out.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? ""
+  const url =
+    out
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .pop() ?? ""
   const m = url.match(/\/issues\/(\d+)\b/)
   if (!m) throw new Error(`gh issue create returned unexpected output: ${out}`)
   return { number: Number(m[1]), created: true }
@@ -382,7 +387,9 @@ function commitAndPushState(filePath: string, goalId: string, cwd: string): void
     process.stderr.write(`[createQaGoal] hook output:\n${tail}\n`)
     const noVerify = gitTry(["push", "--no-verify", "--quiet"], cwd)
     if (noVerify.ok) {
-      process.stderr.write(`[createQaGoal] push succeeded with --no-verify (consider adding kody artifacts to ignore configs)\n`)
+      process.stderr.write(
+        `[createQaGoal] push succeeded with --no-verify (consider adding kody artifacts to ignore configs)\n`,
+      )
       return
     }
     process.stderr.write(
@@ -416,7 +423,12 @@ function createTaskIssue(
     args.push("--label", l)
   }
   const out = gh(args, { input: body, cwd })
-  const url = out.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? ""
+  const url =
+    out
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .pop() ?? ""
   const m = url.match(/\/issues\/(\d+)\b/)
   if (!m) throw new Error(`gh issue create returned unexpected output: ${out}`)
   return { number: Number(m[1]), url }
@@ -478,11 +490,16 @@ export const createQaGoal: PostflightScript = async (ctx, _profile, agentResult:
     const title = `QA [${verdict}]: ${scope?.trim() || "smoke"} — ${todayIso()}`.slice(0, 240)
     let url = ""
     try {
-      const out = gh(
-        ["issue", "create", "--title", title, "--label", FINDING_LABEL, "--body-file", "-"],
-        { input: finalText, cwd: ctx.cwd },
-      )
-      url = out.split("\n").map((l) => l.trim()).filter(Boolean).pop() ?? ""
+      const out = gh(["issue", "create", "--title", title, "--label", FINDING_LABEL, "--body-file", "-"], {
+        input: finalText,
+        cwd: ctx.cwd,
+      })
+      url =
+        out
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .pop() ?? ""
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       ctx.output.exitCode = 4
@@ -526,11 +543,7 @@ export const createQaGoal: PostflightScript = async (ctx, _profile, agentResult:
     if (manifestRead.number !== null) {
       manifestIssueNumber = manifestRead.number
       try {
-        postIssueComment(
-          manifestRead.number,
-          `## QA — ${verdict} · goal \`${goalId}\`\n\n${markdown}`,
-          ctx.cwd,
-        )
+        postIssueComment(manifestRead.number, `## QA — ${verdict} · goal \`${goalId}\`\n\n${markdown}`, ctx.cwd)
       } catch (err) {
         const reason = err instanceof Error ? err.message : String(err)
         process.stderr.write(`[createQaGoal] could not comment on manifest issue: ${reason.slice(0, 300)}\n`)

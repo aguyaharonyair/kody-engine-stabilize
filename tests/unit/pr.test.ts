@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-  buildPrBody,
-  buildPrTitle,
-  recoverSourceIssueNumber,
-  stripTitlePrefixes,
-} from "../../src/pr.js"
+import { buildPrBody, buildPrTitle, recoverSourceIssueNumber, stripTitlePrefixes } from "../../src/pr.js"
 
 describe("pr: buildPrTitle", () => {
   it("formats issue number and title", () => {
@@ -154,4 +149,3 @@ describe("pr: recoverSourceIssueNumber", () => {
     expect(recoverSourceIssueNumber("", "1326-slug", 1326)).toBeNull()
   })
 })
-

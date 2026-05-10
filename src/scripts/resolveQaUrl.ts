@@ -55,12 +55,7 @@ function ghQuery<T>(args: string[], cwd: string): T | null {
  * the gh CLI errored. Best-effort — a missing URL just falls through to the
  * next resolution step.
  */
-function lookupGoalDeploymentUrl(
-  goalId: string,
-  owner: string,
-  repo: string,
-  cwd: string,
-): string | null {
+function lookupGoalDeploymentUrl(goalId: string, owner: string, repo: string, cwd: string): string | null {
   const ref = `goal-${goalId}`
   // List up to 5 latest deployments for this ref (Vercel preview branch).
   // We want the most recent one whose status reached `success`. Older

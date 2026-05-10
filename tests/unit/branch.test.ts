@@ -102,8 +102,8 @@ describe("runFlow: resolveBaseFromLabels", () => {
   })
 
   it("ignores other labels", () => {
-    expect(
-      resolveBaseFromLabels(["bug", "goal-runner:dispatched", "kody:running", "goal:abc-123"]),
-    ).toBe("goal-abc-123")
+    expect(resolveBaseFromLabels(["bug", "goal-runner:dispatched", "kody:running", "goal:abc-123"])).toBe(
+      "goal-abc-123",
+    )
   })
 })

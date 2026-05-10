@@ -197,18 +197,7 @@ export function ensurePr(opts: EnsurePrOptions): PrResult {
   }
 
   const base = opts.baseBranch && opts.baseBranch.length > 0 ? opts.baseBranch : opts.defaultBranch
-  const args = [
-    "pr",
-    "create",
-    "--head",
-    opts.branch,
-    "--base",
-    base,
-    "--title",
-    title,
-    "--body-file",
-    "-",
-  ]
+  const args = ["pr", "create", "--head", opts.branch, "--base", base, "--title", title, "--body-file", "-"]
   if (opts.draft) args.push("--draft")
 
   const output = gh(args, { input: body, cwd: opts.cwd })
