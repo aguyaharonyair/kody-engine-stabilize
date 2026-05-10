@@ -75,6 +75,10 @@ jobs:
         run: rm -f .kody-pip-requirements.txt
 
       - env:
+          # GH_TOKEN explicitly so the engine's gh CLI verify passes without
+          # needing GH_PAT/KODY_TOKEN. Workaround for kody-cli.ts:106 not
+          # detecting the lowercase `github_token` key produced by toJSON(secrets).
+          GH_TOKEN:      ${{ secrets.KODY_TOKEN || github.token }}
           ALL_SECRETS:   ${{ toJSON(secrets) }}
           SESSION_ID:    ${{ inputs.sessionId }}
           INIT_MESSAGE:  ${{ inputs.message }}
