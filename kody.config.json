@@ -1,0 +1,22 @@
+{
+  "$schema": "https://raw.githubusercontent.com/aharonyaircohen/kody-engine/main/kody.config.schema.json",
+  "quality": {
+    "typecheck": "pnpm typecheck",
+    "lint": "pnpm lint",
+    "format": "pnpm format",
+    "testUnit": "pnpm test"
+  },
+  "git": {
+    "defaultBranch": "main"
+  },
+  "github": {
+    "owner": "aguyaharonyair",
+    "repo": "kody-engine-stabilize"
+  },
+  "agent": {
+    "model": "minimax/MiniMax-M2.7-highspeed"
+  },
+  "jobs": {
+    "stateBackend": "local-file"
+  }
+}
