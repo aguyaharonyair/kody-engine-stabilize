@@ -15,7 +15,7 @@ import * as path from "node:path"
 import type { PreflightScript } from "../executables/types.js"
 import { type EnsureLabelsResult, ensureLabels } from "../lifecycleLabels.js"
 import { loadProfile } from "../profile.js"
-import { listExecutables } from "../registry.js"
+import { listBuiltinJobs, listExecutables } from "../registry.js"
 import { generateQaGuideTemplate, runQaDiscovery } from "./discoverQaContext.js"
 import { QA_GUIDE_REL_PATH } from "./loadQaGuide.js"
 
@@ -210,7 +210,33 @@ export function performInit(cwd: string, force: boolean): InitResult {
     }
   }
 
-  // 4. .github/workflows/kody-<name>.yml for every discovered scheduled executable.
+  // 4. .kody/jobs/<slug>.md — copy every built-in job markdown shipped with
+  //    the engine. Built-in jobs live under `src/jobs/` (dev) / `dist/jobs/`
+  //    (built); consumer repos get a starter copy each, scaffolded once and
+  //    then human-edited. Cadence is enforced by the file's `every:`
+  //    frontmatter, read by `dispatchJobFileTicks`.
+  //
+  //    `--force` will overwrite consumer edits to these files — same
+  //    contract as `kody.yml` and `kody.config.json` above. Job files
+  //    are *intended* to be edited (cadence, thresholds, prompt prose),
+  //    so use `--force` only when you accept losing those edits.
+  const builtinJobs = listBuiltinJobs()
+  if (builtinJobs.length > 0) {
+    const jobsDir = path.join(cwd, ".kody", "jobs")
+    fs.mkdirSync(jobsDir, { recursive: true })
+    for (const job of builtinJobs) {
+      const rel = path.join(".kody", "jobs", `${job.slug}.md`)
+      const target = path.join(cwd, rel)
+      if (fs.existsSync(target) && !force) {
+        skipped.push(rel)
+        continue
+      }
+      fs.writeFileSync(target, fs.readFileSync(job.filePath, "utf-8"))
+      wrote.push(rel)
+    }
+  }
+
+  // 5. .github/workflows/kody-<name>.yml for every discovered scheduled executable.
   for (const exe of listExecutables()) {
     let profile: ReturnType<typeof loadProfile>
     try {
@@ -228,7 +254,7 @@ export function performInit(cwd: string, force: boolean): InitResult {
     wrote.push(`.github/workflows/kody-${exe.name}.yml`)
   }
 
-  // 5. Create/update every kody-owned label declared across the executable
+  // 6. Create/update every kody-owned label declared across the executable
   //    profile set. Best-effort: if `gh` isn't installed/authenticated, this
   //    is skipped silently and setKodyLabel will lazily create the label on
   //    first use during a real flow run.

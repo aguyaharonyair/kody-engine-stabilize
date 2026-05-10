@@ -53,4 +53,42 @@ describe("commitAndPush: gate on agentDone", () => {
     await commitAndPush(ctx as never, profile, null)
     expect(doCommitAndPush).toHaveBeenCalledOnce()
   })
+
+  // Salvage path: when agentDone=false ONLY because the agent forgot to emit
+  // the contract sentinel (markerMissing=true), the work itself is valid.
+  // Pushing it lets ensurePr open a draft PR so the operator can inspect.
+  // Without this, hours of agent work get discarded whenever a model drops
+  // the DONE marker (see issue #1436).
+  describe("salvage on missing marker", () => {
+    it("commits and pushes when agentDone=false but agentMarkerMissing=true", async () => {
+      vi.mocked(doCommitAndPush).mockClear()
+      const ctx = makeCtx({ agentDone: false, agentMarkerMissing: true })
+      await commitAndPush(ctx as never, profile, null)
+      expect(doCommitAndPush).toHaveBeenCalledOnce()
+      expect(ctx.data.salvagedFromMissingMarker).toBe(true)
+    })
+
+    it("uses the default commit message when no commitMessage was parsed", async () => {
+      vi.mocked(doCommitAndPush).mockClear()
+      const ctx = makeCtx({ agentDone: false, agentMarkerMissing: true })
+      await commitAndPush(ctx as never, profile, null)
+      const args = vi.mocked(doCommitAndPush).mock.calls[0]
+      expect(args?.[1]).toBe("chore: kody changes")
+    })
+
+    it("still skips when agentDone=false and markerMissing is not set (e.g. requireFeedbackActions failure)", async () => {
+      vi.mocked(doCommitAndPush).mockClear()
+      const ctx = makeCtx({ agentDone: false })
+      await commitAndPush(ctx as never, profile, null)
+      expect(doCommitAndPush).not.toHaveBeenCalled()
+      expect(ctx.data.salvagedFromMissingMarker).toBeUndefined()
+    })
+
+    it("still skips when agentDone=false and markerMissing=false (e.g. explicit FAILED)", async () => {
+      vi.mocked(doCommitAndPush).mockClear()
+      const ctx = makeCtx({ agentDone: false, agentMarkerMissing: false })
+      await commitAndPush(ctx as never, profile, null)
+      expect(doCommitAndPush).not.toHaveBeenCalled()
+    })
+  })
 })

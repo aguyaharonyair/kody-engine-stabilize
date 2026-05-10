@@ -22,6 +22,7 @@ export const parseAgentResult: PostflightScript = async (ctx, profile, agentResu
   ctx.data.planDeviations = parsed.planDeviations
   ctx.data.priorArt = parsed.priorArt
   ctx.data.agentFailureReason = parsed.failureReason
+  ctx.data.agentMarkerMissing = parsed.markerMissing
   ctx.data.agentOutcome = agentResult.outcome
   ctx.data.agentError = agentResult.error
 

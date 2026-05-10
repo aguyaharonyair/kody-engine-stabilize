@@ -27,6 +27,7 @@ function makeCtx(overrides: {
   prUrl?: string
   prAction?: "created" | "updated"
   agentDone?: boolean
+  agentFailureReason?: string
   verifyOk?: boolean
   verifyReason?: string
   target?: "issue" | "pr"
@@ -41,6 +42,7 @@ function makeCtx(overrides: {
     prUrl = "https://github.com/x/y/pull/42",
     prAction = "created",
     agentDone = true,
+    agentFailureReason,
     verifyOk = true,
     verifyReason,
     target = "pr",
@@ -62,6 +64,7 @@ function makeCtx(overrides: {
       prResult: { action: prAction, url: prUrl, number: targetNumber, draft: false },
       agentDone,
       verifyOk,
+      ...(agentFailureReason ? { agentFailureReason } : {}),
       ...(verifyReason ? { verifyReason } : {}),
       ...(prCrashReason ? { prCrashReason } : {}),
     },
@@ -117,14 +120,39 @@ describe("postIssueComment message wording", () => {
     expect(body).not.toContain("draft PR")
   })
 
-  it("no commits: posts 'no changes to commit' regardless of prAction", async () => {
+  it("no commits + agent finished cleanly: falls back to 'no changes to commit'", async () => {
+    // agentDone=true with no diff is the rare case: e.g. all the agent's
+    // edits were in forbidden paths. Generic message is appropriate here
+    // because there is no more specific failure to surface.
     const ctx = makeCtx({
       commitResult: { committed: false },
       hasCommitsAhead: false,
       prAction: "updated",
+      agentDone: true,
     })
     await postIssueComment(ctx, profile, null)
     expect(lastPrBody()).toBe("⚠️ kody FAILED: no changes to commit")
+    expect(ctx.output.exitCode).toBe(3)
+  })
+
+  // Regression: previously this branch always reported "no changes to commit"
+  // even when the agent had failed for a more specific reason (missing DONE
+  // marker, agent SDK error, etc.). That hid the real cause from operators —
+  // 1436 ran 205 turns of work, all tests passed, then surfaced as "no
+  // changes to commit" because the agent forgot the contract sentinel.
+  it("no commits + agent failed: surfaces the specific agent failure reason", async () => {
+    const ctx = makeCtx({
+      commitResult: { committed: false },
+      hasCommitsAhead: false,
+      prAction: "updated",
+      agentDone: false,
+      agentFailureReason: "no DONE or FAILED marker in agent output — agent tail: …Result: 29 tests pass",
+    })
+    await postIssueComment(ctx, profile, null)
+    const body = lastPrBody()
+    expect(body).toContain("no DONE or FAILED marker")
+    expect(body).toContain("29 tests pass")
+    expect(body).not.toBe("⚠️ kody FAILED: no changes to commit")
     expect(ctx.output.exitCode).toBe(3)
   })
 

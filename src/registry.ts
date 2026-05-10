@@ -1,11 +1,19 @@
 /**
- * Executable auto-discovery.
+ * Engine asset auto-discovery.
  *
- * Scans the filesystem for `<executables-root>/<name>/profile.json` and
- * returns the list of available executables. Lets `entry.ts` dispatch
- * purely by directory layout — drop a new `src/executables/<name>/` with
- * a `profile.json` and `kody <name>` works without any code change here
- * or in the router.
+ * Two asset families live alongside each other:
+ *
+ *   - **Executables** (`src/executables/<name>/profile.json`) — units the
+ *     dispatcher invokes by name. `listExecutables()` powers `entry.ts` so
+ *     dropping a new directory makes `kody <name>` work without router edits.
+ *   - **Built-in jobs** (`src/jobs/<slug>.md`) — markdown templates that
+ *     `kody init` scaffolds into consumer repos under `.kody/jobs/`. Once
+ *     scaffolded, the consumer owns the file; `job-scheduler` /
+ *     `job-tick` discover it from the consumer's `.kody/jobs/` directly,
+ *     not via this registry.
+ *
+ * Both follow the same dev/built path-resolution pattern so `src/` and
+ * `dist/` layouts work identically.
  */
 
 import * as fs from "node:fs"
@@ -42,6 +50,48 @@ export function getExecutablesRoot(): string {
  */
 export function getProjectExecutablesRoot(): string {
   return path.join(process.cwd(), ".kody", "executables")
+}
+
+/**
+ * Resolve the engine's built-in jobs root. Mirrors `getExecutablesRoot()` so
+ * dev (`src/jobs`) and built (`dist/jobs`) layouts both work. Built-in jobs
+ * are markdown files scaffolded into consumer repos by `kody init` — drop a
+ * new `src/jobs/<slug>.md` to ship a default job; no code changes required.
+ */
+export function getBuiltinJobsRoot(): string {
+  const here = path.dirname(new URL(import.meta.url).pathname)
+  const candidates = [
+    path.join(here, "jobs"), // dev: src/
+    path.join(here, "..", "jobs"), // built: dist/bin → dist/jobs
+    path.join(here, "..", "src", "jobs"), // fallback
+  ]
+  for (const c of candidates) {
+    if (fs.existsSync(c) && fs.statSync(c).isDirectory()) return c
+  }
+  return candidates[0]!
+}
+
+export interface BuiltinJob {
+  slug: string
+  filePath: string
+}
+
+/**
+ * List every built-in job markdown file shipped with the engine. Returns
+ * `{ slug, filePath }` for each `.md` file under the built-in jobs root,
+ * sorted by slug. Used by `kody init` to scaffold default jobs into
+ * `.kody/jobs/<slug>.md` in consumer repos.
+ */
+export function listBuiltinJobs(root: string = getBuiltinJobsRoot()): BuiltinJob[] {
+  if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return []
+  const out: BuiltinJob[] = []
+  for (const ent of fs.readdirSync(root, { withFileTypes: true })) {
+    if (!ent.isFile() || !ent.name.endsWith(".md")) continue
+    const slug = ent.name.slice(0, -3)
+    out.push({ slug, filePath: path.join(root, ent.name) })
+  }
+  out.sort((a, b) => a.slug.localeCompare(b.slug))
+  return out
 }
 
 /**

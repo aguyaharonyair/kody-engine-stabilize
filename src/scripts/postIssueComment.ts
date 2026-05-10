@@ -32,8 +32,17 @@ export const postIssueComment: PostflightScript = async (ctx) => {
   const prAction = (ctx.data.prResult as { action?: "created" | "updated" } | undefined)?.action
 
   if (!commitResult?.committed && !hasCommits) {
-    const reason = "no changes to commit"
-    postWith(targetType, targetNumber, `⚠️ kody FAILED: ${reason}`, ctx.cwd)
+    // Prefer the specific agent failure reason (e.g. "no DONE or FAILED
+    // marker in agent output — agent tail: …") when one exists. The generic
+    // "no changes to commit" string was hiding the real cause from operators:
+    // an agent that completed the work but forgot the contract sentinel
+    // showed up identically to one that produced no diff at all, even though
+    // the diagnoses and fixes differ. Fall back to "no changes to commit"
+    // only when the agent has no failure to report (agentDone=true and the
+    // working tree was simply empty — e.g., all edits in forbidden paths).
+    const specific = computeFailureReason(ctx)
+    const reason = specific.length > 0 ? specific : "no changes to commit"
+    postWith(targetType, targetNumber, `⚠️ kody FAILED: ${truncate(reason, 1500)}`, ctx.cwd)
     markRunFailed(ctx)
     ctx.output.exitCode = 3
     ctx.output.reason = reason

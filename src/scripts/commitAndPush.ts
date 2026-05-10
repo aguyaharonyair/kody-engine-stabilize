@@ -34,10 +34,27 @@ export const commitAndPush: PostflightScript = async (ctx) => {
   // If an earlier postflight (e.g. requireFeedbackActions) flipped agentDone
   // to false, we must not commit the agent's edits. Leave them in the working
   // tree so the failure reason is surfaced without polluting the branch.
-  if (ctx.data.agentDone === false) {
+  //
+  // Exception: when agentDone=false ONLY because the agent forgot to emit the
+  // DONE/COMMIT_MSG/PR_SUMMARY contract markers (agentMarkerMissing=true), the
+  // work itself is valid — the model just stopped at a prose summary instead of
+  // the structured tail. Salvage by committing+pushing anyway; ensurePr will
+  // open a draft PR (failureReason → draft) so the operator can inspect the
+  // diff. Without this salvage, hours of agent work get thrown away whenever
+  // a model drops the sentinel, which is the worst-of-both outcome — we paid
+  // for the run, then discarded the result.
+  const markerMissing = ctx.data.agentMarkerMissing === true
+  if (ctx.data.agentDone === false && !markerMissing) {
     ctx.data.commitResult = { committed: false, pushed: false, skippedReason: "agentDone=false" }
     ctx.data.hasCommitsAhead = hasCommitsAhead(branch, ctx.config.git.defaultBranch, ctx.cwd)
     return
+  }
+
+  if (ctx.data.agentDone === false && markerMissing) {
+    // Surface the salvage path for postIssueComment / observability. The
+    // commit message falls back to DEFAULT_COMMIT_MESSAGE because the agent
+    // didn't supply one — by definition there's no COMMIT_MSG marker.
+    ctx.data.salvagedFromMissingMarker = true
   }
 
   const message = (ctx.data.commitMessage as string) || DEFAULT_COMMIT_MESSAGE

@@ -169,6 +169,14 @@ export interface ParsedAgentResult {
    */
   priorArt: string
   failureReason: string
+  /**
+   * True when the agent produced text but emitted none of the contract
+   * markers (DONE / COMMIT_MSG / PR_SUMMARY / FAILED). Distinct from an
+   * explicit `FAILED:` line (agent told us it failed) and from empty
+   * output (agent crashed before any text). Downstream postflights use
+   * this to salvage work the agent completed but forgot to declare.
+   */
+  markerMissing: boolean
 }
 
 export function parseAgentResult(finalText: string): ParsedAgentResult {
@@ -182,6 +190,7 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
       planDeviations: "",
       priorArt: "",
       failureReason: "agent produced no final message",
+      markerMissing: false,
     }
 
   // Allow markdown decorators around the marker word (the agent may emit
@@ -201,6 +210,7 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
       planDeviations: "",
       priorArt: "",
       failureReason: stripMarkdownEmphasis(failedMatch[1]!),
+      markerMissing: false,
     }
   }
 
@@ -234,6 +244,7 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
       planDeviations: "",
       priorArt: "",
       failureReason: `no DONE or FAILED marker in agent output — agent tail: ${tail}`,
+      markerMissing: true,
     }
   }
 
@@ -277,7 +288,16 @@ export function parseAgentResult(finalText: string): ParsedAgentResult {
       .trim()
   }
 
-  return { done: true, commitMessage, prSummary, feedbackActions, planDeviations, priorArt, failureReason: "" }
+  return {
+    done: true,
+    commitMessage,
+    prSummary,
+    feedbackActions,
+    planDeviations,
+    priorArt,
+    failureReason: "",
+    markerMissing: false,
+  }
 }
 
 /**

@@ -216,6 +216,36 @@ describe("prompt: parseAgentResult", () => {
     expect(result.failureReason).toMatch(/no final message/)
   })
 
+  // markerMissing distinguishes "agent forgot the contract sentinel" (we may
+  // still salvage the diff) from "agent emitted FAILED" (don't salvage) and
+  // "agent emitted nothing" (suspect — also don't salvage).
+  describe("markerMissing flag", () => {
+    it("is true when agent produced text but no DONE/FAILED/COMMIT_MSG/PR_SUMMARY", () => {
+      const result = parseAgentResult("All tests pass, lint clean, work complete.")
+      expect(result.markerMissing).toBe(true)
+    })
+
+    it("is false for an explicit FAILED line", () => {
+      const result = parseAgentResult("FAILED: tests broken")
+      expect(result.markerMissing).toBe(false)
+    })
+
+    it("is false when agent produced no final message at all", () => {
+      const result = parseAgentResult("")
+      expect(result.markerMissing).toBe(false)
+    })
+
+    it("is false on a clean DONE", () => {
+      const result = parseAgentResult("DONE\nCOMMIT_MSG: feat: x\nPR_SUMMARY:\n- y")
+      expect(result.markerMissing).toBe(false)
+    })
+
+    it("is false when COMMIT_MSG alone signals completion", () => {
+      const result = parseAgentResult("COMMIT_MSG: fix: y\nPR_SUMMARY:\n- fixed y")
+      expect(result.markerMissing).toBe(false)
+    })
+  })
+
   it("DONE without COMMIT_MSG returns empty commit msg", () => {
     const result = parseAgentResult("DONE")
     expect(result.done).toBe(true)
