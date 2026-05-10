@@ -36,7 +36,11 @@ coverage/
 .kody-engine/
 
 # kody (single-session pipeline) runtime artifacts
-.kody/
+# NOTE (stabilize fork): .kody/ is INTENTIONALLY tracked here so this fork
+# can act as a kody-target (goal-tick reads .kody/goals/<id>/state.json,
+# dashboard reads umbrella state, etc). Do NOT propagate this gitignore
+# relaxation upstream to aharonyaircohen/kody-engine.
+# .kody/
 .kody-lean/
 
 # Claude Code harness runtime artifacts (per-machine)
