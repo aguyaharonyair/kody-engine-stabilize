@@ -88,12 +88,13 @@ For EACH file you will change or create, include:
  - Current state — what's there today (function/class/export names, relevant line ranges). Skip for new files.
  - Target state — what will be there after the change, at the same level of specificity.
  - Exact locations of edits (function name, line range if stable, or anchor like "after the `meta` group field, before the closing `fields: []`").
- - For new files: rough shape including exports, key functions with signatures, and top-level module comment.
+ - For new files: rough shape including exports, key functions with signatures, and top-level module comment. **Do not paste full function bodies** — signatures and 1–2 sentence intent per export are enough for an implementer to write the body. Single-line type/interface declarations and short config snippets are fine.
  - Dependencies touched (imports added/removed, new packages) — call out if anything needs installing.
 
 ## Algorithms & pseudocode
 REQUIRED for any non-trivial logic (sorting, diffing, state transitions, concurrency, batching, caching, conflict resolution).
  - Write pseudocode (not production code) showing the actual algorithm — inputs, steps, outputs.
+ - Pseudocode ≤ ~20 lines per algorithm. If it grows past that, the algorithm needs decomposing, not more lines.
  - Call out invariants the algorithm preserves.
  - Call out complexity (N swaps vs N-squared recalc vs single-batch write).
  - If there's a choice between two algorithms, explain why you picked this one.
@@ -150,5 +151,6 @@ No filler. No marketing language. Depth over brevity.>
 - Read-only. Do NOT modify any file.
 - Do NOT run git or gh commands.
 - No speculative scope — plan only what the issue asks for, but plan it THOROUGHLY.
+- **Plan length ≤ ~1500 lines / ~15k tokens.** Larger plans get truncated by output token caps before the closing `DONE` marker — and a truncated plan is worse than a smaller one. If a feature legitimately needs more, output `FAILED: scope too large for single plan — split into <list of sub-issues>` instead of overrunning.
 - If the issue is ambiguous and you cannot make progress without input, output `FAILED: <what's unclear>` instead of a plan.
 - If the Research floor cannot be met because required files are missing or unreadable, output `FAILED: <what could not be read>` instead of a half-blind plan.
