@@ -1,7 +1,7 @@
 {
   "name": "@kody-ade/kody-engine",
   "version": "0.4.27",
-  "description": "kody — autonomous development engine. Single-session Claude Code agent behind a generic executor + declarative executable profiles.",
+  "description": "kody \u2014 autonomous development engine. Single-session Claude Code agent behind a generic executor + declarative executable profiles.",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -22,7 +22,8 @@
     "lint": "biome check",
     "lint:fix": "biome check --write",
     "format": "biome format --write",
-    "prepublishOnly": "pnpm build"
+    "prepublishOnly": "pnpm build",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@actions/cache": "^6.0.0",
