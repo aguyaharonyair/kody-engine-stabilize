@@ -4,7 +4,7 @@
   "description": "Convert tick.sh into a TypeScript preflight chain on the engine's existing architecture. Each task issue extracts one piece of tick.sh into a named TS script with unit tests. Final cutover deletes tick.sh. Dogfooded on this fork; upstreamed to aharonyaircohen/kody-engine via cross-repo PR when complete.",
   "state": "active",
   "createdAt": "2026-05-10T12:12:16Z",
-  "updatedAt": "2026-05-20T04:37:34.313914Z",
+  "updatedAt": "2026-05-20T08:07:08.839976Z",
   "goalIssueNumber": 1,
   "lastDispatchedIssue": 2
 }
